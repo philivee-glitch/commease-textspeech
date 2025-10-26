@@ -1,0 +1,140 @@
+﻿import 'package:flutter/material.dart';
+import 'tts_controller.dart';
+
+Future<void> showTtsSettings(BuildContext context) async {
+  await showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) => const TtsSettingsSheet(),
+  );
+}
+
+class TtsSettingsSheet extends StatefulWidget {
+  const TtsSettingsSheet({super.key});
+  @override
+  State<TtsSettingsSheet> createState() => _TtsSettingsSheetState();
+}
+
+class _TtsSettingsSheetState extends State<TtsSettingsSheet> {
+  late double _rate;
+  late double _pitch;
+  late TtsVoicePreset _preset;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = TtsController.instance;
+    _rate = c.rate;
+    _pitch = c.pitch;
+    _preset = c.preset;
+
+    // Coerce any legacy/unknown preset to a valid option
+    const allowed = <TtsVoicePreset>[
+      TtsVoicePreset.system,
+      TtsVoicePreset.australianMale,
+      TtsVoicePreset.australianFemale,
+    ];
+    if (!allowed.contains(_preset)) {
+      _preset = TtsVoicePreset.system;
+      // Fire and forget; no await in initState
+      TtsController.instance.setPreset(_preset);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = const <DropdownMenuItem<TtsVoicePreset>>[
+      DropdownMenuItem(
+        value: TtsVoicePreset.system,
+        child: Text('System default'),
+      ),
+      DropdownMenuItem(
+        value: TtsVoicePreset.australianMale,
+        child: Text('Australian English (male)'),
+      ),
+      DropdownMenuItem(
+        value: TtsVoicePreset.australianFemale,
+        child: Text('Australian English (female)'),
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('TTS voice & pitch',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+
+          DropdownButton<TtsVoicePreset>(
+            value: _preset,
+            items: items,
+            isExpanded: true,
+            onChanged: (v) async {
+              if (v == null) return;
+              setState(() => _preset = v);
+              await TtsController.instance.setPreset(v);
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              const Icon(Icons.speed),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Slider(
+                  value: _rate,
+                  min: 0.1,
+                  max: 1.0,
+                  divisions: 18,
+                  label: _rate.toStringAsFixed(2),
+                  onChanged: (v) => setState(() => _rate = v),
+                  onChangeEnd: (v) => TtsController.instance.setRate(v),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              const Icon(Icons.graphic_eq),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Slider(
+                  value: _pitch,
+                  min: 0.5,
+                  max: 2.0,
+                  divisions: 15,
+                  label: _pitch.toStringAsFixed(2),
+                  onChanged: (v) => setState(() => _pitch = v),
+                  onChangeEnd: (v) => TtsController.instance.setPitch(v),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 4),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Test'),
+              onPressed: () => TtsController.instance
+                  .speak('This is a test of the voice.'),
+            ),
+          ),
+
+          SizedBox(height: MediaQuery.of(context).viewInsets.bottom),
+        ],
+      ),
+    );
+  }
+}

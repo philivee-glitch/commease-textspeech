@@ -1,0 +1,263 @@
+import 'dart:convert';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+enum TtsVoicePreset { system, male, female, child }
+// Back-compat alias (harmless if unused elsewhere):
+typedef VoicePreset = TtsVoicePreset;
+
+class TtsController {
+  TtsController._();
+  static final TtsController instance = TtsController._();
+
+  final FlutterTts _tts = FlutterTts();
+
+  double rate = 0.6;
+  double pitch = 1.0;
+  TtsVoicePreset preset = TtsVoicePreset.system;
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    rate  = prefs.getDouble("tts_rate") ?? 0.6;
+    pitch = prefs.getDouble("tts_pitch") ?? 1.0;
+
+    final presetStr = prefs.getString("tts_preset") ?? "system";
+    try {
+      preset = TtsVoicePreset.values.firstWhere((e) => e.name == presetStr);
+    } catch (_) {
+      preset = TtsVoicePreset.system;
+    }
+
+    // Prefer Google's engine on Android (ignored on iOS if unavailable)
+    try { await _tts.setEngine('com.google.android.tts'); } catch (_) {}
+
+    await _tts.setLanguage('en-AU');
+    await _tts.setSpeechRate(rate);
+    await _tts.setPitch(pitch);
+    await _tts.setSharedInstance(true);
+    `n    await _applySavedVoiceOrAUDefault();`nawait _applySavedVoiceOrAUDefault();
+// Re-apply saved language/voice on startup
+    final savedLang = prefs.getString("tts_language");
+    if (savedLang != null && savedLang.isNotEmpty) {
+      try { await _tts.setLanguage(savedLang); } catch (_) {}
+    }
+    final savedVoice = prefs.getString("tts_voice");
+    if (savedVoice != null && savedVoice.isNotEmpty) {
+      try {
+        final Map<String, String> v = Map<String, String>.from(jsonDecode(savedVoice));
+        await _tts.setVoice(v);
+      } catch (_) {}
+    }await _ensureAuVoiceForPreset();
+  }
+
+  Future<void> _ensureAuVoiceForPreset() async {
+    if (preset == TtsVoicePreset.system) return;
+    await _selectVoiceForPreset(preset);
+  }
+
+  Future<void> _selectVoiceForPreset(TtsVoicePreset p) async {
+    // Make sure the engine is in AU first
+    await _tts.setLanguage('en-AU');
+
+    final raw = await _tts.getVoices;
+    final list = (raw is List) ? raw.cast<Map>() : <Map>[];
+
+    // Filter to Australian English voices only
+    final au = list.where((v) {
+      final locale = (v['locale'] ?? '').toString().toLowerCase();
+      return locale.startsWith('en-au');
+    }).toList();
+
+    if (au.isEmpty) {
+      // Fallback: language is already en-AU, so keep that.
+      return;
+    }
+
+    Map chosen = au.first;
+
+    bool nameHas(Map v, List<String> tags) {
+      final n = (v['name'] ?? '').toString().toLowerCase();
+      return tags.any((t) => n.contains(t));
+    }
+
+    switch (p) {
+      case TtsVoicePreset.male:
+        chosen = au.firstWhere(
+          (v) => nameHas(v, ['male','m3','m2','m1']),
+          orElse: () => au.first,
+        );
+        break;
+      case TtsVoicePreset.female:
+        chosen = au.firstWhere(
+          (v) => nameHas(v, ['female','f3','f2','f1']),
+          orElse: () => au.first,
+        );
+        break;
+      case TtsVoicePreset.child:
+        chosen = au.firstWhere(
+          (v) => nameHas(v, ['child','kid','teen','young']),
+          orElse: () => au.firstWhere(
+            (v) => nameHas(v, ['f3','f2']),
+            orElse: () => au.first,
+          ),
+        );
+        break;
+      case TtsVoicePreset.system:
+        return; // language-only
+    }
+
+    await _tts.setVoice({
+      'name': chosen['name'],
+      'locale': chosen['locale'],
+    });
+  }
+
+  Future<void> speak(String text) async {
+    await _tts.stop();
+    await _tts.setLanguage('en-AU');       // keep engine pinned to AU
+    await _tts.setSpeechRate(rate);
+    await _tts.setPitch(pitch);
+    if (preset != TtsVoicePreset.system) {
+      await _selectVoiceForPreset(preset);
+    }
+    await _tts.speak(text);
+  }
+
+  Future<void> stop() => _tts.stop();
+
+  Future<void> setRate(double newRate) async {
+  rate = newRate.clamp(0.1, 1.0);
+  await _tts.setSpeechRate(rate);
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setDouble("tts_rate", rate);
+}
+
+
+  Future<void> setPitch(double newPitch) async {
+    // Clamp to a sensible range; FlutterTts accepts ~0.5â€“2.0 on most engines
+    pitch = newPitch.clamp(0.1, 2.0);
+    await _tts.setPitch(pitch);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble("tts_pitch", pitch);
+  }
+
+  Future<void> setPreset(TtsVoicePreset newPreset) async {
+    preset = newPreset;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("tts_preset", preset.name);
+    // Try to pick a matching en-AU voice when available
+    await _selectVoiceForPreset(preset);
+  }
+  Future<void> _applySavedVoiceOrAUDefault() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedName = prefs.getString('tts_voice_name');
+      final savedLocale = prefs.getString('tts_voice_locale');
+
+      if (savedLocale != null) {
+        await _tts.setLanguage(savedLocale);
+      }
+      if (savedName != null && savedLocale != null) {
+        await _tts.setVoice({"name": savedName, "locale": savedLocale});
+        return;
+      }
+
+      final vs = await _tts.getVoices;
+      if (vs is List) {
+        Map<String, dynamic>? au;
+        for (final v in vs) {
+          final m = Map<String, dynamic>.from(v as Map);
+          final locale = (m['locale'] ?? '').toString().toLowerCase();
+          if (locale == 'en-au') { au = m; break; }
+        }
+        if (au != null) {
+          final name = (au['name'] ?? '').toString();
+          final locale = (au['locale'] ?? 'en-AU').toString();
+          await _tts.setLanguage(locale);
+          await _tts.setVoice({"name": name, "locale": locale});
+          await prefs.setString('tts_voice_name', name);
+          await prefs.setString('tts_voice_locale', locale);
+        } else {
+          // Fallback: at least request en-AU language
+          await _tts.setLanguage('en-AU');
+        }
+      }
+    } catch (_) {
+      // If anything fails, let engine default; we just avoid crashing here.
+    }
+  }
+  // === Voice persistence & AU default ===
+  static const _kEngineKey = 'tts_engine';
+  static const _kVoiceNameKey = 'tts_voice_name';
+  static const _kVoiceLocaleKey = 'tts_voice_locale';
+
+  Future<void> setVoiceChoice({String? engine, required String name, required String locale}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (engine != null && engine.isNotEmpty) {
+      try { await _tts.setEngine(engine); } catch (_) {}
+      await prefs.setString(_kEngineKey, engine);
+    }
+    try { await _tts.setLanguage(locale); } catch (_) {}
+    try { await _tts.setVoice({'name': name, 'locale': locale}); } catch (_) {}
+    await prefs.setString(_kVoiceNameKey, name);
+    await prefs.setString(_kVoiceLocaleKey, locale);
+  }
+
+  Future<void> _applySavedVoiceOrAUDefault() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedEngine = prefs.getString(_kEngineKey);
+    final savedName   = prefs.getString(_kVoiceNameKey);
+    final savedLocale = prefs.getString(_kVoiceLocaleKey);
+
+    // Prefer Google engine on Android for consistent AU voices.
+    try {
+      await _tts.setEngine((savedEngine != null && savedEngine.isNotEmpty)
+        ? savedEngine
+        : 'com.google.android.tts');
+    } catch (_) {}
+
+    List<dynamic> rawVoices = const [];
+    try { rawVoices = (await _tts.getVoices) ?? const []; } catch (_) {}
+
+    // Normalize voices to {name, locale}
+    final voices = <Map<String,String>>[];
+    for (final v in rawVoices) {
+      if (v is Map) {
+        voices.add({
+          'name': (v['name'] ?? '').toString(),
+          'locale': (v['locale'] ?? '').toString(),
+        });
+      }
+    }
+
+    Map<String,String>? chosen;
+
+    // 1) Exact saved voice
+    if (savedName != null && savedLocale != null) {
+      for (final v in voices) {
+        if (v['name'] == savedName && v['locale'] == savedLocale) { chosen = v; break; }
+      }
+    }
+
+    // 2) Any en-AU voice
+    chosen ??= voices.cast<Map<String,String>?>().firstWhere(
+      (v) => v != null && (v['locale'] ?? '').startsWith('en-AU'),
+      orElse: () => null,
+    );
+
+    // 3) Any English as last resort
+    chosen ??= voices.cast<Map<String,String>?>().firstWhere(
+      (v) => v != null && (v['locale'] ?? '').startsWith('en-'),
+      orElse: () => null,
+    );
+
+    if (chosen != null) {
+      final loc = chosen['locale']!;
+      try { await _tts.setLanguage(loc); } catch (_) {}
+      try { await _tts.setVoice({'name': chosen['name'], 'locale': loc}); } catch (_) {}
+    } else {
+      // Fallback: language only
+      try { await _tts.setLanguage(savedLocale ?? 'en-AU'); } catch (_) {}
+    }
+  }
+}

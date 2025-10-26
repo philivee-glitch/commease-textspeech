@@ -1,0 +1,1955 @@
+﻿import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'tts_controller.dart';
+import 'tts_settings.dart';
+import 'services/subcategory_prefs.dart';
+
+
+
+import 'how_to_use.dart';
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SubcategoryPrefs.init();
+  runApp(const MyApp()); // ← keep your existing root widget here
+}
+
+
+/// ------------------ Storage Keys ------------------
+class StoreKeys {
+  static const acceptedTerms = 'has_accepted_terms';
+  static const ttsRate = 'tts_rate';
+  static const history = 'history';
+  static const favs = 'favs';
+
+  // Home custom tiles & colour map
+  static const homeCustomQuick = 'home:custom_quick';
+  static const homeCustomCats = 'home:custom_categories';
+  static const homeColourMap = 'home:colour_map'; // json {label: intColor}
+
+  // Subcategory custom list per parent
+  static String subcats(String parentRaw) => 'subcats:${_keyize(parentRaw)}';
+
+  // Words per category/subcategory composed key
+  static String words(String catKey) => 'words:$catKey';
+
+  // Backup namespace tag
+  static const backupNamespace = 'backup:v2';
+}
+
+/// ------------------ Helpers ------------------
+String _keyize(String s) => s.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_');
+String _composeKey(String parent, String child) => '${_keyize(parent)}|${_keyize(child)}';
+String _titleCase(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+/// ------------------ Models ------------------
+enum HomeItemType { category, quick }
+
+class HomeItem {
+  final String label;
+  final HomeItemType type;
+  const HomeItem(this.label, this.type);
+}
+
+class HistoryItem {
+  final String phrase;
+  final DateTime at;
+  HistoryItem(this.phrase, this.at);
+
+  Map<String, dynamic> toJson() => {'p': phrase, 't': at.toIso8601String()};
+  static HistoryItem fromJson(Map<String, dynamic> j) =>
+      HistoryItem(j['p'] as String, DateTime.parse(j['t'] as String));
+}
+
+/// ------------------ Seed Data ------------------
+final List<HomeItem> _seededHome = const [
+  HomeItem('needs', HomeItemType.category),
+  HomeItem('feelings', HomeItemType.category),
+  HomeItem('food', HomeItemType.category),
+  HomeItem('places', HomeItemType.category),
+  HomeItem('people', HomeItemType.category),
+  HomeItem('i want', HomeItemType.category),
+  HomeItem('help', HomeItemType.quick),
+  HomeItem('stop', HomeItemType.quick),
+  HomeItem('go', HomeItemType.quick),
+  HomeItem('toilet', HomeItemType.quick),
+  HomeItem('drink', HomeItemType.quick),
+  HomeItem('eat', HomeItemType.quick),
+  HomeItem('sleep', HomeItemType.quick),
+  HomeItem('pain', HomeItemType.quick),
+];
+
+final Map<String, List<String>> _seededFlat = {
+  'needs': [
+    'I need help',
+    'I need the toilet',
+    'I need a drink',
+    'I need to eat',
+    'I need to rest',
+    'I need my medication',
+    'I feel unwell',
+    'I am in pain',
+    'I need to go outside',
+    'I need to be alone',
+    'I need assistance to move',
+  ],
+  'feelings': [
+    'Happy',
+    'Sad',
+    'Angry',
+    'Tired',
+    'Excited',
+    'Scared',
+    'Worried',
+    'Calm',
+    'Confused',
+    'Bored',
+    'Stressed',
+    'Lonely',
+    'Uncomfortable',
+    'Dizzy',
+    'Sick',
+  ],
+};
+
+final Map<String, Map<String, List<String>>> _seededNested = {
+  'food': {
+    'meals': [
+      'Breakfast',
+      'Lunch',
+      'Dinner',
+      'Snack',
+      'I am hungry',
+      'More please',
+      'No more',
+    ],
+    'drinks': [
+      'Water',
+      'Juice',
+      'Milk',
+      'Tea',
+      'Coffee',
+      'Hot',
+      'Cold',
+      'I am thirsty',
+    ],
+    'items': [
+      'Apple',
+      'Banana',
+      'Bread',
+      'Rice',
+      'Chicken',
+      'Fish',
+      'Soup',
+      'Yoghurt',
+      'Vegetables',
+      'Fruit',
+      'Chips',
+      'I donâ„¢t like this',
+    ],
+  },
+  'places': {
+    'home areas': [
+      'Home',
+      'Bedroom',
+      'Bathroom',
+      'Toilet',
+      'Kitchen',
+      'Dining room',
+      'Garden',
+      'Outside',
+    ],
+    'medical': ['Clinic', 'Hospital', 'Pharmacy'],
+    'community': ['Shop', 'School', 'Work', 'Community centre', 'Car'],
+  },
+  'people': {
+    'family & friends': ['Mum', 'Dad', 'Family', 'Friend', 'Neighbour'],
+    'staff & professionals': [
+      'Carer',
+      'Nurse',
+      'Doctor',
+      'Physio',
+      'Therapist',
+      'Support worker',
+      'Teacher',
+      'Manager',
+    ],
+  },
+  'i want': {
+    'care': [
+      'I want to go to the toilet',
+      'I want a drink',
+      'I want to eat',
+      'I want to rest',
+      'I want to sleep',
+      'I want my medication',
+      'I want pain relief',
+    ],
+    'activity': [
+      'I want to go outside',
+      'I want to sit',
+      'I want to stand',
+      'I want a different activity',
+      'I want music',
+      'I want TV',
+    ],
+    'social': ['I want to be alone', 'I want company', 'I want to call someone'],
+    'control': ['I want to stop', 'I want help', 'I want to go'],
+  },
+};
+
+/// ------------------ Colour Management ------------------
+/// Palette of distinct, accessible colours (Material primaries & accents).
+const List<Color> _homePalette = [
+  Color(0xFF1565C0), // Blue 800
+  Color(0xFF6A1B9A), // Purple 800
+  Color(0xFF2E7D32), // Green 800
+  Color(0xFFAD1457), // Pink 800
+  Color(0xFF00838F), // Teal 800
+  Color(0xFFEF6C00), // Orange 800
+  Color(0xFF5D4037), // Brown 700
+  Color(0xFF283593), // Indigo 800
+  Color(0xFF00897B), // Teal 600
+  Color(0xFF7B1FA2), // Purple 700
+  Color(0xFF00796B), // Teal 700
+  Color(0xFF1976D2), // Blue 700
+  Color(0xFF455A64), // Blue Grey 700
+  Color(0xFFAFB42B), // Lime 700
+  Color(0xFFC62828), // Red 800
+];
+
+/// Default colours for seeded tiles (stable & recognisable).
+final Map<String, Color> _seededColours = {
+  'needs': const Color(0xFF1565C0),
+  'feelings': const Color(0xFF6A1B9A),
+  'food': const Color(0xFF2E7D32),
+  'places': const Color(0xFF283593),
+  'people': const Color(0xFFEF6C00),
+  'i want': const Color(0xFF455A64),
+  'help': const Color(0xFFC62828),
+  'stop': const Color(0xFFD32F2F),
+  'go': const Color(0xFF2E7D32),
+  'toilet': const Color(0xFF00838F),
+  'drink': const Color(0xFF1976D2),
+  'eat': const Color(0xFF5D4037),
+  'sleep': const Color(0xFF00796B),
+  'pain': const Color(0xFFAD1457),
+};
+
+/// ------------------ TTS ------------------
+class SpeechService {
+  SpeechService._();
+  static final SpeechService instance = SpeechService._();
+
+  final FlutterTts _tts = FlutterTts();
+  bool _ready = false;
+
+  double _rate = 0.5; // slower default; persisted
+  double get rate => _rate;
+
+  Future<void> _init() async {
+    if (_ready) return;
+
+    // Load persisted rate
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getDouble(StoreKeys.ttsRate);
+      if (saved != null) _rate = saved.clamp(0.25, 1.25);
+    } catch (_) {}
+
+    try {
+      await _tts.setLanguage("en-AU");
+      await _tts.setPitch(1.05);
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.setSpeechRate(_rate);
+    } catch (_) {}
+
+    _ready = true;
+  }
+
+  Future<void> setRate(double value) async {
+    _rate = value.clamp(0.25, 1.25);
+    try {
+      await _tts.setSpeechRate(_rate);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(StoreKeys.ttsRate, _rate);
+    } catch (_) {}
+  }
+
+  Future<void> speak(String text) async {
+    final t = text.trim();
+    if (t.isEmpty) return;
+    await _init();
+    try {
+      await _tts.stop();
+      await _tts.speak(t);
+      _recordHistory(t);
+    } catch (_) {}
+  }
+
+  Future<void> _recordHistory(String phrase) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(StoreKeys.history);
+      final list = <HistoryItem>[];
+      if (raw != null && raw.isNotEmpty) {
+        for (final m in (jsonDecode(raw) as List)) {
+          list.add(HistoryItem.fromJson(Map<String, dynamic>.from(m as Map)));
+        }
+      }
+      list.insert(0, HistoryItem(phrase, DateTime.now()));
+      if (list.length > 50) list.removeRange(50, list.length);
+      await prefs.setString(
+          StoreKeys.history, jsonEncode(list.map((e) => e.toJson()).toList()));
+    } catch (_) {}
+  }
+}
+
+/// ------------------ App Root ------------------
+class CommunicationApp extends StatelessWidget {
+  final bool startOnTerms;
+  const CommunicationApp({super.key, this.startOnTerms = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'CommEase',
+      themeMode: ThemeMode.system,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.indigo,
+        visualDensity: VisualDensity.comfortable,
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.indigo,
+        brightness: Brightness.dark,
+      ),
+      home: startOnTerms ? const TermsAndConditionsScreen() : const HomeScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+/// ------------------ Responsive Grid Helper ------------------
+/// Uses max cross-axis extent so cells adapt fluidly and avoid overflow.
+class AdaptiveGridDelegate extends SliverGridDelegateWithMaxCrossAxisExtent {
+  AdaptiveGridDelegate({
+    required BuildContext context,
+    double minCellWidth = 180,
+    double portraitAspect = 1.1,
+    double landscapeAspect = 1.2,
+  }) : super(
+          maxCrossAxisExtent: _calcMaxExtent(context, minCellWidth),
+          childAspectRatio:
+              MediaQuery.of(context).orientation == Orientation.portrait
+                  ? portraitAspect
+                  : landscapeAspect,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+        );
+
+  static double _calcMaxExtent(BuildContext context, double minCellWidth) {
+    final width = MediaQuery.of(context).size.width;
+    final columns = (width / minCellWidth).clamp(2, 6).floor();
+    // Choose a target width so cells are >= minCellWidth but responsive
+    final targetWidth = width / columns;
+    return targetWidth;
+  }
+}
+
+/// ------------------ HOME ------------------
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<HomeItem> _custom = [];
+  late Map<String, int> _colourMap; // label -> ARGB int (persisted)
+  late Set<int> _usedColours; // used on current page (to avoid duplicates)
+
+  @override
+  void initState() {
+    super.initState();
+    _colourMap = {};
+    _usedColours = {};
+    _loadCustom();
+  }
+
+  Future<void> _loadCustom() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final quick = prefs.getStringList(StoreKeys.homeCustomQuick) ?? const [];
+      final cats = prefs.getStringList(StoreKeys.homeCustomCats) ?? const [];
+      final colourJson = prefs.getString(StoreKeys.homeColourMap);
+      if (colourJson != null) {
+        final map = Map<String, dynamic>.from(jsonDecode(colourJson) as Map);
+        _colourMap = map.map((k, v) => MapEntry(k, v as int));
+      }
+      setState(() {
+        _custom = [
+          ...cats.map((e) => HomeItem(e, HomeItemType.category)),
+          ...quick.map((e) => HomeItem(e, HomeItemType.quick)),
+        ];
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveCustom() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final quick =
+          _custom.where((e) => e.type == HomeItemType.quick).map((e) => e.label).toList();
+      final cats =
+          _custom.where((e) => e.type == HomeItemType.category).map((e) => e.label).toList();
+      await prefs.setStringList(StoreKeys.homeCustomQuick, quick);
+      await prefs.setStringList(StoreKeys.homeCustomCats, cats);
+      await prefs.setString(StoreKeys.homeColourMap, jsonEncode(_colourMap));
+    } catch (_) {}
+  }
+
+  List<HomeItem> get _homeItems => [..._seededHome, ..._custom];
+
+  Color _getHomeTileColour(String label) {
+    final lower = label.toLowerCase();
+    // Seeded colours stable
+    if (_seededColours.containsKey(lower)) {
+      return _seededColours[lower]!;
+    }
+    // Custom tiles: ensure uniqueness per page
+    final existing = _colourMap[lower];
+    if (existing != null) return Color(existing);
+
+    // Build set of colours already used on page
+    _usedColours = {
+      ..._homeItems
+          .map((i) => i.label.toLowerCase())
+          .where((l) => _seededColours.containsKey(l))
+          .map((l) => _seededColours[l]!.value),
+      ..._colourMap.values,
+    }.toSet();
+
+    // Choose the first unused palette colour
+    Color chosen = _homePalette.first;
+    for (final c in _homePalette) {
+      if (!_usedColours.contains(c.value)) {
+        chosen = c;
+        break;
+      }
+    }
+    // Persist selection
+    _colourMap[lower] = chosen.value;
+    return chosen;
+  }
+
+  void _addHomeTile() {
+    HomeItemType type = HomeItemType.category;
+    String label = '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Add home tile', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<HomeItemType>(
+                value: type,
+                items: const [
+                  DropdownMenuItem(value: HomeItemType.category, child: Text('Category tile')),
+                  DropdownMenuItem(value: HomeItemType.quick, child: Text('Quick tile')),
+                ],
+                onChanged: (v) => type = v ?? HomeItemType.category,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                onChanged: (v) => label = v,
+                decoration: const InputDecoration(
+                  hintText: 'Tile label (e.g., Music)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final t = label.trim();
+                        if (t.isEmpty) {
+                          Navigator.pop(ctx);
+                          return;
+                        }
+                        setState(() {
+                          // Assign a unique colour now
+                          _getHomeTileColour(t);
+                          _custom.add(HomeItem(t, type));
+                        });
+                        await _saveCustom();
+                        if (mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteHomeTile(HomeItem item) {
+    final isSeeded =
+        _seededHome.any((s) => s.label == item.label && s.type == item.type);
+    if (isSeeded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Default tiles cannot be deleted.')),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete tile'),
+        content: Text('Remove “${_titleCase(item.label)}” from Home?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              setState(() {
+                _custom.removeWhere((e) => e.label == item.label && e.type == item.type);
+                _colourMap.remove(item.label.toLowerCase());
+              });
+              await _saveCustom();
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _iconFor(String label) {
+    switch (label.toLowerCase()) {
+      case 'needs':
+        return Icons.list_alt;
+      case 'feelings':
+        return Icons.emoji_emotions;
+      case 'food':
+        return Icons.restaurant;
+      case 'places':
+        return Icons.place;
+      case 'people':
+        return Icons.people;
+      case 'i want':
+        return Icons.check_circle;
+      case 'help':
+        return Icons.help;
+      case 'stop':
+        return Icons.stop;
+      case 'go':
+        return Icons.play_arrow;
+      case 'toilet':
+        return Icons.wc;
+      case 'drink':
+        return Icons.local_drink;
+      case 'eat':
+        return Icons.fastfood;
+      case 'sleep':
+        return Icons.hotel;
+      case 'pain':
+        return Icons.healing;
+      default:
+        return Icons.category;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nested = _seededNested;
+    final flat = _seededFlat;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('CommEase')),
+      drawer: const _AppDrawer(),
+      // Add tile now appears as a grid item (same size as others).
+
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Fully scrollable grid: prevents any RenderFlex overflow
+            return GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: AdaptiveGridDelegate(context: context),
+              itemCount: _homeItems.length + 1,
+              itemBuilder: (context, index) {
+                // Render an 'Add tile' card as the final grid item (same size as others)
+                if (index == _homeItems.length) {
+                  final cs = Theme.of(context).colorScheme;
+                  return ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: cs.secondaryContainer,
+                      foregroundColor: cs.onSecondaryContainer,
+                    ),
+                    onPressed: _addHomeTile,
+                    child: _iconLabel('Add tile', Icons.add),
+                  );
+                }
+        
+                final item = _homeItems[index];
+                final title = _titleCase(item.label);
+                final colour = _getHomeTileColour(item.label);
+                final onTextColour = _onColour(colour, Theme.of(context).brightness);
+
+                return GestureDetector(
+                  onLongPress: () => _confirmDeleteHomeTile(item),
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colour,
+                      foregroundColor: onTextColour,
+                    ),
+                    onPressed: () async {
+                      await TtsController.instance.speak(title);
+                      if (item.type == HomeItemType.quick) return;
+
+                      // Navigate
+                      final raw = item.label;
+                      final isSeeded = _seededHome.any((s) => s.label == item.label && s.type == item.type);
+                      final hasNested = nested.containsKey(raw);
+                      if (hasNested && isSeeded) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SubcategoryMenuScreen(
+                              category: title,
+                              parentKeyRaw: raw,
+                              subcategories: nested[raw]!,
+                            ),
+                          ),
+                        );
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => WordLibraryScreen(
+                              categoryDisplay: title,
+                              categoryKey: _keyize(raw),
+                              initialWords: flat[raw] ?? const [],
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: _iconLabel(title, _iconFor(item.label)),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Simple content for the tile (icon + label, centred)
+  Widget _iconLabel(String text, IconData icon) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 28),
+        const SizedBox(height: 8),
+        Text(
+          text,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
+  // Contrast-aware text colour (very lightweight)
+  Color _onColour(Color bg, Brightness b) {
+    // Relative luminance heuristic
+    final lum = 0.299 * bg.red + 0.587 * bg.green + 0.114 * bg.blue;
+    return lum > 160 ? Colors.black : Colors.white;
+  }
+}
+
+/// ------------------ Subcategory Menu ------------------
+class SubcategoryMenuScreen extends StatefulWidget {
+  final String category; // Display name
+  final String parentKeyRaw; // raw key, e.g., "food"
+  final Map<String, List<String>> subcategories;
+
+  const SubcategoryMenuScreen({
+    super.key,
+    required this.category,
+    required this.parentKeyRaw,
+    required this.subcategories,
+  });
+
+  @override
+  State<SubcategoryMenuScreen> createState() => _SubcategoryMenuScreenState();
+}
+
+class _SubcategoryMenuScreenState extends State<SubcategoryMenuScreen> {
+  late Map<String, List<String>> _subs; // includes seeded + custom
+  List<String> _custom = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _subs = Map<String, List<String>>.from(widget.subcategories);
+    _loadCustom();
+  }
+
+  Future<void> _loadCustom() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _custom = prefs.getStringList(StoreKeys.subcats(widget.parentKeyRaw)) ?? const [];
+      for (final k in _custom) {
+        _subs.putIfAbsent(k, () => <String>[]);
+      }
+      setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _saveCustom() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(StoreKeys.subcats(widget.parentKeyRaw), _custom);
+    } catch (_) {}
+  }
+
+  void _cantDeleteDefault() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Default subcategories cannot be deleted.')),
+    );
+  }
+
+  void _addSubcategory() {
+    String label = '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Add subcategory', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                onChanged: (v) => label = v,
+                decoration: const InputDecoration(
+                  hintText: 'Subcategory name (e.g., Water)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final t = label.trim();
+                        if (t.isNotEmpty) {
+                          setState(() {
+                            _subs.putIfAbsent(t, () => <String>[]);
+                            _custom.add(t);
+                          });
+                          await _saveCustom();
+                        }
+                        if (mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteSubcategory(String subKey) {
+    final seeded = widget.subcategories.containsKey(subKey);
+    if (seeded) return _cantDeleteDefault();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete subcategory'),
+        content: Text('Remove ${_titleCase(subKey)}? This will not delete any other data.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              setState(() {
+                _subs.remove(subKey);
+                _custom.remove(subKey);
+              });
+              await _saveCustom();
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subs = _subs.keys.toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.category),
+        actions: [
+  IconButton(
+    tooltip: 'Add subcategory',
+    icon: const Icon(Icons.add_box_outlined),
+    onPressed: _addSubcategory,
+  ),
+  IconButton(
+    icon: const Icon(Icons.record_voice_over),
+    tooltip: 'TTS voice & pitch',
+    onPressed: () => showTtsSettings(context),
+  ),
+],
+      ),
+
+      body: SafeArea(
+        child: GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: AdaptiveGridDelegate(context: context),
+          itemCount: subs.length,
+          itemBuilder: (context, index) {
+            final subKey = subs[index];
+            final title = _titleCase(subKey);
+            return GestureDetector(
+              onLongPress: () => _confirmDeleteSubcategory(subKey),
+              child: ElevatedButton(
+                onPressed: () async {
+                  await TtsController.instance.speak(title);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => WordLibraryScreen(
+                        categoryDisplay: '${widget.category} $title',
+                        categoryKey: _composeKey(widget.parentKeyRaw, subKey),
+                        initialWords: _subs[subKey] ?? const [],
+                      ),
+                    ),
+                  );
+                },
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// ------------------ Words Screen ------------------
+class WordLibraryScreen extends StatefulWidget {
+  final String categoryDisplay;
+  final String categoryKey;
+  final List<String> initialWords;
+
+  const WordLibraryScreen({
+    super.key,
+    required this.categoryDisplay,
+    required this.categoryKey,
+    required this.initialWords,
+  });
+
+  @override
+  State<WordLibraryScreen> createState() => _WordLibraryScreenState();
+}
+
+class _WordLibraryScreenState extends State<WordLibraryScreen> {
+  late List<String> _words;
+  final List<String> _selectedWords = [];
+  Set<String> _favs = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList(StoreKeys.words(widget.categoryKey));
+      final favs = prefs.getStringList(StoreKeys.favs) ?? const [];
+      setState(() {
+        _words = stored ?? List<String>.from(widget.initialWords);
+        _favs = favs.toSet();
+      });
+    } catch (_) {
+      setState(() => _words = List<String>.from(widget.initialWords));
+    }
+  }
+
+  Future<void> _saveWords() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(StoreKeys.words(widget.categoryKey), _words);
+    } catch (_) {}
+  }
+
+  Future<void> _saveFavs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(StoreKeys.favs, _favs.toList());
+    } catch (_) {}
+  }
+
+  void _addWordToSentence(String word) {
+    setState(() => _selectedWords.add(word));
+  }
+
+  void _showAddWordSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        String newWord = '';
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Add to ${widget.categoryDisplay}', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                onChanged: (v) => newWord = v,
+                decoration: const InputDecoration(
+                  hintText: 'Enter word or phrase',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final t = newWord.trim();
+                        if (t.isNotEmpty) {
+                          setState(() => _words.add(t));
+                          await _saveWords();
+                        }
+                        if (mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteWord(String word, int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete word'),
+        content: Text('Remove “$word”, from ${widget.categoryDisplay}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              setState(() {
+                _words.removeAt(index);
+                _selectedWords.removeWhere((w) => w == word);
+                _favs.remove(word);
+              });
+              await _saveWords();
+              await _saveFavs();
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleFavourite(String word) async {
+    setState(() {
+      if (_favs.contains(word)) {
+        _favs.remove(word);
+      } else {
+        _favs.add(word);
+      }
+    });
+    await _saveFavs();
+  }
+
+  Future<void> _speakSentence() async {
+    final sentence = _selectedWords.join(' ');
+    await TtsController.instance.speak(sentence);
+  }
+
+  void _clearSentence() => setState(() => _selectedWords.clear());
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.categoryDisplay),
+        actions: [
+          IconButton(
+            tooltip: 'Add word',
+            icon: const Icon(Icons.add),
+            onPressed: _showAddWordSheet,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverGrid(
+                gridDelegate: AdaptiveGridDelegate(context: context, minCellWidth: 150),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final word = _words[index];
+                    final isFav = _favs.contains(word);
+                    return GestureDetector(
+                      onLongPress: () => _showWordActions(word, index, isFav),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: cs.primaryContainer,
+                          foregroundColor: cs.onPrimaryContainer,
+                        ),
+                        onPressed: () async {
+                          _addWordToSentence(word);
+                          await TtsController.instance.speak(word);
+                        },
+                        child: Stack(
+                          children: [
+                            Align(
+                              alignment: Alignment.center,
+                              child: Text(
+                                word,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            Positioned(
+                              right: 6,
+                              top: 6,
+                              child: Icon(isFav ? Icons.star : Icons.star_border, size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  childCount: _words.length,
+                ),
+              ),
+            ),
+            // Sentence builder row (sticks to content end; never overflows)
+            SliverToBoxAdapter(
+              child: Container(
+                color: cs.surfaceVariant,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _selectedWords.join(' '),
+                        style: const TextStyle(fontSize: 16),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.volume_up), onPressed: _speakSentence),
+                    IconButton(icon: const Icon(Icons.clear), onPressed: _clearSentence),
+                  ],
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWordActions(String word, int index, bool isFav) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.star),
+              title: Text(isFav ? 'Remove from favourites' : 'Add to favourites'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _toggleFavourite(word);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Delete'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmDeleteWord(word, index);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.volume_up),
+              title: const Text('Speak'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await TtsController.instance.speak(word);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_copy),
+              title: const Text('Add to sentence'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _addWordToSentence(word);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ------------------ Drawer / Menu ------------------
+class _AppDrawer extends StatefulWidget {
+  const _AppDrawer();
+
+  @override
+  State<_AppDrawer> createState() => _AppDrawerState();
+}
+
+class _AppDrawerState extends State<_AppDrawer> {
+  List<String> _favs = [];
+  List<HistoryItem> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _favs = prefs.getStringList(StoreKeys.favs) ?? const [];
+      final raw = prefs.getString(StoreKeys.history);
+      _history = [];
+      if (raw != null) {
+        for (final m in (jsonDecode(raw) as List)) {
+          _history.add(HistoryItem.fromJson(Map<String, dynamic>.from(m as Map)));
+        }
+      }
+      setState(() {});
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            ListTile(
+              title: const Text('Menu', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('Quick access'),
+              trailing: IconButton(
+                icon: const Icon(Icons.info_outline),
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AboutPage())),
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.star),
+              title: const Text('Favourites'),
+              subtitle: Text('${_favs.length} item(s)'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FavouritesPage())),
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('History'),
+              subtitle: Text('${_history.length} recent'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryPage())),
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('Settings'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage())),
+            ),
+            ListTile(
+              leading: const Icon(Icons.backup),
+              title: const Text('Backup / Restore'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BackupRestorePage())),
+            ),
+            ListTile(
+              leading: const Icon(Icons.privacy_tip),
+              title: const Text('Terms & Conditions'),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TermsInfoPage())),
+            ),
+            ListTile(
+  leading: const Icon(Icons.info_outline),
+  title: const Text('About'),
+  onTap: () {
+    Navigator.of(context).pop();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AboutPage()),
+    );
+  },
+),
+
+ListTile(
+  leading: const Icon(Icons.privacy_tip_outlined),
+  title: const Text('Privacy policy'),
+  onTap: () {
+    Navigator.of(context).pop();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+    );
+  },
+),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------ Favourites Page ------------------
+class FavouritesPage extends StatefulWidget {
+  const FavouritesPage({super.key});
+  @override
+  State<FavouritesPage> createState() => _FavouritesPageState();
+}
+
+class _FavouritesPageState extends State<FavouritesPage> {
+  List<String> _favs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _favs = (prefs.getStringList(StoreKeys.favs) ?? []).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Favourites')),
+      body: SafeArea(
+        child: GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: AdaptiveGridDelegate(context: context),
+          itemCount: _favs.length,
+          itemBuilder: (context, index) {
+            final word = _favs[index];
+            return ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cs.primaryContainer,
+                foregroundColor: cs.onPrimaryContainer,
+              ),
+              onPressed: () => TtsController.instance.speak(word),
+              child: Text(
+                word,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------ History Page ------------------
+class HistoryPage extends StatefulWidget {
+  const HistoryPage({super.key});
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> {
+  // Store as strings for safety; if you have a HistoryItem class above, you can switch back.
+  List<String> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    _history = (prefs.getStringList(StoreKeys.history) ?? []).toList();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('History')),
+      body: ListView.separated(
+        itemCount: _history.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, i) {
+          final phrase = _history[i];
+          return ListTile(
+            title: Text(phrase),
+            trailing: IconButton(
+              icon: const Icon(Icons.volume_up),
+              onPressed: () => TtsController.instance.speak(phrase),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ------------------ Settings Page (speech rate only) ------------------
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key});
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  double _rate = TtsController.instance.rate;
+
+
+
+  Future<void> _saveRate(double v) async {
+  await TtsController.instance.setRate(v);
+  setState(() => _rate = v);
+}
+
+// ------------------ Backup / Restore (simple placeholder) ------------------
+  @override
+  Widget build(BuildContext context) {
+    final label = _rate.toStringAsFixed(2);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text("Speech speed", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(Icons.speed),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Slider(
+                      value: _rate,
+                      min: 0.1,
+                      max: 1.0,
+                      divisions: 18,
+                      label: label,
+                      onChanged: (v) => setState(() => _rate = v),
+                      onChangeEnd: _saveRate,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(label),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.record_voice_over),
+                label: const Text('TTS voice & pitch'),
+                onPressed: () => showTtsSettings(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class BackupRestorePage extends StatefulWidget {
+  const BackupRestorePage({super.key});
+  @override
+  State<BackupRestorePage> createState() => _BackupRestorePageState();
+}
+
+class _BackupRestorePageState extends State<BackupRestorePage> {
+  final controller = TextEditingController();
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Backup / Restore')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.download),
+                    label: const Text('Export'),
+                    onPressed: () {
+                      // TODO: wire to your real export
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Export not implemented in this build')),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.upload),
+                    label: const Text('Import'),
+                    onPressed: () {
+                      // TODO: wire to your real import
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Import not implemented in this build')),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Paste backup text here',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 5,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------ Terms & Conditions ------------------
+class TermsAndConditionsScreen extends StatefulWidget {
+  const TermsAndConditionsScreen({super.key});
+  @override
+  State<TermsAndConditionsScreen> createState() => _TermsAndConditionsScreenState();
+}
+
+class _TermsAndConditionsScreenState extends State<TermsAndConditionsScreen> {
+  bool _checked = false;
+
+  Future<void> _accept() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(StoreKeys.acceptedTerms, true);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Terms and Conditions')),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _TermsBody(),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _checked,
+                    onChanged: (v) => setState(() => _checked = v ?? false),
+                  ),
+                  const Expanded(
+                    child: Text('I have read and agree to the Terms and Conditions.'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: _checked ? _accept : null,
+                child: const Text('Accept and continue'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class TermsInfoPage extends StatelessWidget {
+  const TermsInfoPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Terms and Conditions')),
+      body: const SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: _TermsBody(),
+        ),
+      ),
+    );
+  }
+}
+
+class _TermsBody extends StatelessWidget {
+  const _TermsBody();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: const [
+        _TParagraph(
+          title: 'Purpose and scope',
+          body:
+              'CommEase provides quick-access phrases and text-to-speech to support everyday communication. It is intended as a convenience tool only.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'No medical or emergency use',
+          body:
+              'CommEase is not a medical device and does not provide clinical, legal, or safety advice. Do not rely on it in emergencies. In an emergency, contact your local emergency number.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Your responsibilities',
+          body:
+              'You are responsible for how you use the app and the content you input or share. Use clear judgment and verify important information independently.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Content accuracy',
+          body:
+              'Text-to-speech output is generated from the phrases you select or enter. Always check that what is spoken reflects your intent before relying on it.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Privacy summary',
+          body:
+              'Your custom phrases and preferences are saved on your device using local storage (SharedPreferences). By default no personal data is sent to a remote server.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Data you add',
+          body:
+              'Any phrases or categories you create may contain personal information if you choose to include it. Do not store sensitive information you would not want others with access to your device to see.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Third-party services',
+          body:
+              'The app may use platform services provided by Apple or Google (for example, text-to-speech engines) which are governed by their own terms and privacy policies.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Children',
+          body:
+              'If a child uses the app, a parent or guardian should supervise and manage any information stored on the device.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Changes to these terms',
+          body:
+              'We may update these terms to reflect improvements or legal requirements. Continued use of CommEase after changes means you accept the updated terms.',
+        ),
+        SizedBox(height: 12),
+        _TParagraph(
+          title: 'Contact',
+          body:
+              'Questions or concerns? Please contact the developer using the details provided in the app store listing.',
+        ),
+      ],
+    );
+  }
+}
+
+
+class _TParagraph extends StatelessWidget {
+  final String title;
+  final String body;
+  const _TParagraph({required this.title, required this.body});
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text(body, style: TextStyle(color: cs.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------ About ------------------
+class AboutPage extends StatelessWidget {
+  const AboutPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final y = DateTime.now().year;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('About CommEase')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'CommEase',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                'Version 1.0 - $y',
+                style: TextStyle(color: cs.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            const _TParagraph(
+              title: 'What is CommEase',
+              body:
+                  'CommEase helps users communicate quickly using tappable phrases and text to speech.',
+            ),
+            const SizedBox(height: 12),
+
+            const _TParagraph(
+              title: 'Key features',
+              body:
+                  'Create custom categories and phrases, mark favourites, review history, and adjust voice, rate, and pitch.',
+            ),
+            const SizedBox(height: 12),
+
+            const _TParagraph(
+              title: 'Data and privacy',
+              body:
+                  'Your phrases and settings are stored on your device. The app does not send this data to a server by default.',
+            ),
+            const SizedBox(height: 12),
+
+            const _TParagraph(
+              title: 'Credits',
+              body:
+                  'Built with Flutter. Text to speech uses the device TTS engine provided by Android or iOS.',
+            ),
+            const SizedBox(height: 12),
+
+            const _TParagraph(
+              title: 'Support',
+              body:
+                  'If you find a problem or have a feature request, please contact the developer via the app store listing.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// ------------------ Privacy Policy ------------------
+class PrivacyPolicyScreen extends StatelessWidget {
+  const PrivacyPolicyScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Privacy policy')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          Text(
+            'Privacy policy',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          SizedBox(height: 4),
+          Text('Last updated: 16 August 2025'),
+          SizedBox(height: 16),
+
+          _TParagraph(
+            title: 'What this policy covers',
+            body:
+                'This policy explains what data CommEase stores on your device and how that data is used.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Data stored on-device',
+            body:
+                'CommEase stores your phrases, categories, favorites, history, text-to-speech preferences, and other settings locally using SharedPreferences.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'No cloud account',
+            body:
+                'The app does not create an online account and does not upload your content to a server by default.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Third-party services',
+            body:
+                'Text-to-speech is provided by your device operating system (Android or iOS). Use of those engines is subject to the platform terms and privacy policies.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Permissions',
+            body:
+                'If the app requests any permissions, they are used only to provide in-app features. You can revoke permissions in system settings at any time.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Analytics and ads',
+            body:
+                'The app does not include third-party analytics or advertising SDKs.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'How to clear your data',
+            body:
+                'You can remove your data by clearing CommEase storage in system settings. You can also export a backup from the app before uninstalling.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Children',
+            body:
+                'If a child uses the app, a parent or guardian should supervise and manage any information stored on the device.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Changes to this policy',
+            body:
+                'We may update this policy as the app evolves. Changes will be reflected in the date above.',
+          ),
+          SizedBox(height: 12),
+
+          _TParagraph(
+            title: 'Contact',
+            body:
+                'Questions? Contact the developer via the app store listing.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+class HowToUsePage extends StatelessWidget {
+  const HowToUsePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget bullet(String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text('-  '),
+          SizedBox(width: 2),
+        ],
+      ),
+    );
+
+    List<Widget> bullets(List<String> items) => items
+        .map((t) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('-  '),
+                  Expanded(child: Text(t)),
+                ],
+              ),
+            ))
+        .toList();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('How to use')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('Quick start', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...bullets([
+              'Tap a tile to speak it. Long-press a tile to delete or manage it.',
+              'Use the + tile to add a quick phrase or a new category.',
+            ]),
+
+            const SizedBox(height: 16),
+            const Text('Voice & speech', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...bullets([
+              'Open Menu > Settings to change speech rate and pitch.',
+              'Open Menu > Settings > Voice to choose a voice and tap Test to preview.',
+              'Your selections save automatically and persist after restart.',
+            ]),
+
+            const SizedBox(height: 16),
+            const Text('Subcategories and words', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...bullets([
+              'Inside a category, use the + icon to add a subcategory.',
+              'Inside a subcategory, use the + icon to add words or short phrases.',
+              'Use the History screen to replay recent phrases.',
+            ]),
+
+            const SizedBox(height: 16),
+            const Text('Favourites', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...bullets([
+              'Mark frequently used words as favourites for faster access.',
+            ]),
+
+            const SizedBox(height: 16),
+            const Text('Backup & restore', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...bullets([
+              'Menu > Backup / Restore lets you export and import your data.',
+            ]),
+
+            const SizedBox(height: 16),
+            const Text('Tips', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...bullets([
+              'If the voice sounds different after device restart, open Settings > Voice and tap Test once to reinitialize the engine.',
+              'For clarity, keep rate around 0.6 and adjust pitch slightly until comfortable.',
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+

@@ -1,0 +1,264 @@
+class _WordLibraryScreenState extends State<WordLibraryScreen> {
+  List<String> _words = [];
+  final List<String> _selectedWords = [];
+  Set<String> _favs = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAll();
+  }
+
+  Future<void> _loadAll() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList(StoreKeys.words(widget.categoryKey));
+      final favs = prefs.getStringList(StoreKeys.favs) ?? const [];
+      setState(() {
+        _words = stored ?? List<String>.from(widget.initialWords);
+        _favs = favs.toSet();
+      });
+    } catch (_) {
+      setState(() => _words = List<String>.from(widget.initialWords));
+    }
+  }
+
+  Future<void> _saveWords() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(StoreKeys.words(widget.categoryKey), _words);
+    } catch (_) {}
+  }
+
+  Future<void> _saveFavs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(StoreKeys.favs, _favs.toList());
+    } catch (_) {}
+  }
+
+  void _addWordToSentence(String word) => setState(() => _selectedWords.add(word));
+
+  void _showAddWordSheet() {
+    showModalBottomSheet(
+      context: context, isScrollControlled: true, useSafeArea: true,
+      builder: (ctx) {
+        String newWord = '';
+        final bottom = MediaQuery.of(ctx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Add to ${widget.categoryDisplay}', style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true, onChanged: (v) => newWord = v,
+                decoration: const InputDecoration(
+                  hintText: 'Enter word or phrase', border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'))),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final t = newWord.trim();
+                        if (t.isNotEmpty) {
+                          setState(() => _words.add(t));
+                          await _saveWords();
+                        }
+                        if (mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('Add'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteWord(String word, int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete word'),
+        content: Text('Remove  $word , from ${widget.categoryDisplay}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              setState(() {
+                _words.removeAt(index);
+                _selectedWords.removeWhere((w) => w == word);
+                _favs.remove(word);
+              });
+              await _saveWords();
+              await _saveFavs();
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleFavourite(String word) async {
+    setState(() {
+      if (_favs.contains(word)) { _favs.remove(word); } else { _favs.add(word); }
+    });
+    await _saveFavs();
+  }
+
+  Future<void> _speakSentence() async {
+    final sentence = _selectedWords.join(' ');
+    await TtsController.instance.speak(sentence);
+  }
+
+  void _clearSentence() => setState(() => _selectedWords.clear());
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.categoryDisplay),
+        actions: [
+          IconButton(
+            tooltip: 'Add word', icon: const Icon(Icons.add), onPressed: _showAddWordSheet,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ValueListenableBuilder<double>(
+          valueListenable: TileSizeController.instance.gridScale,
+          builder: (context, gridScaleValue, child) {
+            return CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 180 * gridScaleValue,
+                      childAspectRatio: 1.1,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final word = _words[index];
+                        final isFav = _favs.contains(word);
+                        return GestureDetector(
+                          onLongPress: () => _showWordActions(word, index, isFav),
+                          child: ValueListenableBuilder<double>(
+                            valueListenable: TileSizeController.instance.scale,
+                            builder: (context, textScaleValue, child) {
+                              return ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: cs.primaryContainer,
+                                  foregroundColor: cs.onPrimaryContainer,
+                                ),
+                                onPressed: () async {
+                                  _addWordToSentence(word);
+                                  await TtsController.instance.speak(word);
+                                },
+                                child: Stack(
+                                  children: [
+                                    Align(
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        word,
+                                        textAlign: TextAlign.center, 
+                                        maxLines: 2, 
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 16 * textScaleValue, 
+                                          fontWeight: FontWeight.w600
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      right: 6, top: 6,
+                                      child: Icon(
+                                        isFav ? Icons.star : Icons.star_border, 
+                                        size: 18 * textScaleValue
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                      childCount: _words.length,
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Container(
+                    color: cs.surfaceVariant,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _selectedWords.join(' '),
+                            style: const TextStyle(fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(icon: const Icon(Icons.volume_up), onPressed: _speakSentence),
+                        IconButton(icon: const Icon(Icons.clear), onPressed: _clearSentence),
+                      ],
+                    ),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showWordActions(String word, int index, bool isFav) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.star),
+              title: Text(isFav ? 'Remove from favourites' : 'Add to favourites'),
+              onTap: () { Navigator.pop(ctx); _toggleFavourite(word); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline), title: const Text('Delete'),
+              onTap: () { Navigator.pop(ctx); _confirmDeleteWord(word, index); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.volume_up), title: const Text('Speak'),
+              onTap: () async { Navigator.pop(ctx); await TtsController.instance.speak(word); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_copy), title: const Text('Add to sentence'),
+              onTap: () { Navigator.pop(ctx); _addWordToSentence(word); },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ------------------ Drawer / Menu ------------------

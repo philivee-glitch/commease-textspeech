@@ -1,0 +1,136 @@
+﻿import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+enum TtsVoicePreset { system, male, female, child }
+// Back-compat alias (harmless if unused elsewhere):
+typedef VoicePreset = TtsVoicePreset;
+
+class TtsController {
+  TtsController._();
+  static final TtsController instance = TtsController._();
+
+  final FlutterTts _tts = FlutterTts();
+
+  double rate = 0.6;
+  double pitch = 1.0;
+  TtsVoicePreset preset = TtsVoicePreset.system;
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    rate  = prefs.getDouble("tts_rate") ?? 0.6;
+    pitch = prefs.getDouble("tts_pitch") ?? 1.0;
+
+    final presetStr = prefs.getString("tts_preset") ?? "system";
+    try {
+      preset = TtsVoicePreset.values.firstWhere((e) => e.name == presetStr);
+    } catch (_) {
+      preset = TtsVoicePreset.system;
+    }
+
+    // Prefer Google's engine on Android (ignored on iOS if unavailable)
+    try { await _tts.setEngine('com.google.android.tts'); } catch (_) {}
+
+    await _tts.setLanguage('en-AU');
+    await _tts.setSpeechRate(rate);
+    await _tts.setPitch(pitch);
+    await _tts.setSharedInstance(true);
+
+    await _ensureAuVoiceForPreset();
+  }
+
+  Future<void> _ensureAuVoiceForPreset() async {
+    if (preset == TtsVoicePreset.system) return;
+    await _selectVoiceForPreset(preset);
+  }
+
+  Future<void> _selectVoiceForPreset(TtsVoicePreset p) async {
+    // Make sure the engine is in AU first
+    await _tts.setLanguage('en-AU');
+
+    final raw = await _tts.getVoices;
+    final list = (raw is List) ? raw.cast<Map>() : <Map>[];
+
+    // Filter to Australian English voices only
+    final au = list.where((v) {
+      final locale = (v['locale'] ?? '').toString().toLowerCase();
+      return locale.startsWith('en-au');
+    }).toList();
+
+    if (au.isEmpty) {
+      // Fallback: language is already en-AU, so keep that.
+      return;
+    }
+
+    Map chosen = au.first;
+
+    bool nameHas(Map v, List<String> tags) {
+      final n = (v['name'] ?? '').toString().toLowerCase();
+      return tags.any((t) => n.contains(t));
+    }
+
+    switch (p) {
+      case TtsVoicePreset.male:
+        chosen = au.firstWhere(
+          (v) => nameHas(v, ['male','m3','m2','m1']),
+          orElse: () => au.first,
+        );
+        break;
+      case TtsVoicePreset.female:
+        chosen = au.firstWhere(
+          (v) => nameHas(v, ['female','f3','f2','f1']),
+          orElse: () => au.first,
+        );
+        break;
+      case TtsVoicePreset.child:
+        chosen = au.firstWhere(
+          (v) => nameHas(v, ['child','kid','teen','young']),
+          orElse: () => au.firstWhere(
+            (v) => nameHas(v, ['f3','f2']),
+            orElse: () => au.first,
+          ),
+        );
+        break;
+      case TtsVoicePreset.system:
+        return; // language-only
+    }
+
+    await _tts.setVoice({
+      'name': chosen['name'],
+      'locale': chosen['locale'],
+    });
+  }
+
+  Future<void> speak(String text) async {
+    await _tts.stop();
+    await _tts.setLanguage('en-AU');       // keep engine pinned to AU
+    await _tts.setSpeechRate(rate);
+    await _tts.setPitch(pitch);
+    if (preset != TtsVoicePreset.system) {
+      await _selectVoiceForPreset(preset);
+    }
+    await _tts.speak(text);
+  }
+
+  Future<void> stop() => _tts.stop();
+
+  Future<void> setRate(double newRate) async {
+    rate = newRate.clamp(0.1, 1.0);
+    await _tts.setSpeechRate(rate);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble("tts_rate", rate);
+  }
+
+  Future<void> setPitch(double newPitch) async {
+    pitch = newPitch.clamp(0.5, 2.0);
+    await _tts.setPitch(pitch);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble("tts_pitch", pitch);
+  }
+
+  Future<void> setPreset(TtsVoicePreset newPreset) async {
+    preset = newPreset;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("tts_preset", newPreset.name);
+    await _ensureAuVoiceForPreset();
+  }
+}

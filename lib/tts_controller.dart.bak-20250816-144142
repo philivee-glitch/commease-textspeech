@@ -1,0 +1,137 @@
+﻿import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+enum TtsVoicePreset { system, male, female }
+
+class TtsController {
+  TtsController._();
+  static final TtsController instance = TtsController._();
+
+  final FlutterTts _tts = FlutterTts();
+
+  static const _kRateKey = 'tts_rate';
+  static const _kPitchKey = 'tts_pitch';
+  static const _kPresetKey = 'tts_preset';
+  static const _kVoiceNameKey = 'tts_voice_name';
+
+  double rate = 0.6;
+  double pitch = 1.0;
+  TtsVoicePreset preset = TtsVoicePreset.system;
+  String? _lockedVoiceName;
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    rate = prefs.getDouble(_kRateKey) ?? 0.6;
+    pitch = prefs.getDouble(_kPitchKey) ?? 1.0;
+    final presetStr = prefs.getString(_kPresetKey) ?? 'system';
+    preset = TtsVoicePreset.values.firstWhere(
+      (e) => e.name == presetStr,
+      orElse: () => TtsVoicePreset.system,
+    );
+    _lockedVoiceName = prefs.getString(_kVoiceNameKey);
+
+    await _tts.setSharedInstance(true);
+
+    // Lock to a concrete voice NAME once. Prefer EN-AU.
+    if (_lockedVoiceName == null) {
+      _lockedVoiceName = await _pickBestEnAuVoiceName();
+      if (_lockedVoiceName != null) {
+        await prefs.setString(_kVoiceNameKey, _lockedVoiceName!);
+      }
+    }
+    if (_lockedVoiceName != null) {
+      try { await _tts.setVoice({'name': _lockedVoiceName}); } catch (_) {}
+    }
+
+    await _tts.setSpeechRate(rate);
+    await _tts.setPitch(_effectivePitch());
+  }
+
+  double _effectivePitch() {
+    switch (preset) {
+      case TtsVoicePreset.male:
+        return (pitch * 0.9).clamp(0.5, 2.0);
+      case TtsVoicePreset.female:
+        return (pitch * 1.1).clamp(0.5, 2.0);
+      case TtsVoicePreset.system:
+      default:
+        return pitch.clamp(0.5, 2.0);
+    }
+  }
+
+  Future<void> speak(String text) async {
+    // Always re-assert the locked voice before speaking.
+    final prefs = await SharedPreferences.getInstance();
+    _lockedVoiceName ??= prefs.getString(_kVoiceNameKey);
+    if (_lockedVoiceName != null) {
+      try { await _tts.setVoice({'name': _lockedVoiceName}); } catch (_) {}
+    }
+    await _tts.setSpeechRate(rate);
+    await _tts.setPitch(_effectivePitch());
+    await _tts.speak(text);
+  }
+
+  Future<void> stop() => _tts.stop();
+
+  Future<void> setRate(double newRate) async {
+    rate = newRate.clamp(0.1, 1.0);
+    await _tts.setSpeechRate(rate);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_kRateKey, rate);
+  }
+
+  Future<void> setPitch(double newPitch) async {
+    pitch = newPitch.clamp(0.5, 2.0);
+    await _tts.setPitch(_effectivePitch());
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_kPitchKey, pitch);
+  }
+
+  Future<void> setPreset(TtsVoicePreset p) async {
+    preset = p;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPresetKey, p.name);
+    // Only change pitch (voice stays locked).
+    await _tts.setPitch(_effectivePitch());
+  }
+
+  /// If you ever want to re-lock (e.g., after changing TTS engine), call this.
+  Future<void> relockToBestEnAuVoice() async {
+    final prefs = await SharedPreferences.getInstance();
+    _lockedVoiceName = await _pickBestEnAuVoiceName();
+    if (_lockedVoiceName != null) {
+      try { await _tts.setVoice({'name': _lockedVoiceName}); } catch (_) {}
+      await prefs.setString(_kVoiceNameKey, _lockedVoiceName!);
+    }
+  }
+
+  Future<String?> _pickBestEnAuVoiceName() async {
+    List<dynamic>? voices;
+    try {
+      final v = await _tts.getVoices;
+      if (v is List) voices = v;
+    } catch (_) {}
+    if (voices == null || voices.isEmpty) return null;
+
+    bool _isEnAu(dynamic m) {
+      final loc = (m is Map ? (m['locale'] ?? m['lang']) : null)?.toString() ?? '';
+      final l = loc.replaceAll('_', '-').toLowerCase();
+      return l.startsWith('en-au');
+    }
+
+    final enAu = voices.where(_isEnAu).toList();
+    if (enAu.isEmpty) return null;
+
+    // Prefer 'network' voices if available.
+    enAu.sort((a,b){
+      final an = (a['name'] ?? '').toString().toLowerCase();
+      final bn = (b['name'] ?? '').toString().toLowerCase();
+      final ascore = an.contains('network') ? 0 : 1;
+      final bscore = bn.contains('network') ? 0 : 1;
+      return ascore.compareTo(bscore);
+    });
+
+    final name = (enAu.first['name'] ?? '').toString();
+    return name.isEmpty ? null : name;
+  }
+}
