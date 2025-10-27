@@ -1,7 +1,7 @@
 name: commease
 description: "CommEase — a tile-based communication aid with on-device TTS."
 publish_to: "none"
-version: 2.0.1+5
+version: 2.1.0+6
 environment:
   sdk: ">=3.8.0 <4.0.0"
 dependencies:
@@ -12,6 +12,7 @@ dependencies:
   image: ^4.0.17
   package_info_plus: ^8.0.0
   path_provider: ^2.1.5
+  reorderable_grid_view: ^2.2.8
   share_plus: ^12.0.0
   shared_preferences: ^2.3.2
   url_launcher: ^6.3.2

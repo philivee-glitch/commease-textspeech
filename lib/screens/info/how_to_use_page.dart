@@ -44,23 +44,28 @@ class HowToUsePage extends StatelessWidget {
           ),
           _buildSection(
             context,
-            'Adding Images to Word Tiles',
-            'Personalize your word tiles with custom images:\n\n1. Navigate to any category with word tiles\n2. Long-press a word tile\n3. Select "Add Image" or "Change Image"\n4. Choose a photo from your device\n5. The image will appear on the tile with text below\n\nImages are automatically optimized and cropped to 4:3 ratio. To remove an image, long-press and select "Remove Image".',
+            'Adding Images to Tiles',
+            'Personalize ANY tile with custom images:\n\n1. Long-press any tile (word, subcategory, or quick tile)\n2. Select "Add Image" or "Change Image"\n3. Choose a photo from your device\n4. The image appears on the tile with text below\n\nImages work on:\n• Word tiles in categories\n• Subcategory tiles (Meals, Drinks, etc.)\n• Quick tiles you create\n• Custom category tiles\n\nImages are automatically optimized and cropped to 4:3 ratio for consistency.',
           ),
           _buildSection(
             context,
-            'Deleting Tiles',
-            'Long-press any custom tile and confirm deletion. Note: Default tiles (Needs, Feelings, etc.) cannot be deleted, but you can delete any custom tiles you create.',
+            'Managing Tiles (Edit & Delete)',
+            'Long-press any tile to access the tile menu:\n\n• Add/Change Image: Add or replace the tile image\n• Remove Image: Delete the current image\n• Edit Tile/Word: Rename the tile or word\n• Delete Tile/Word: Remove the tile completely\n\nNote: You can edit and add images to default tiles (like "Meals" or "Drinks"), but you cannot delete default tiles - only custom tiles you create can be deleted.',
+          ),
+          _buildSection(
+            context,
+            'Deleting Subcategories',
+            'When deleting a subcategory:\n\n1. Long-press the subcategory tile\n2. Select "Delete Subcategory"\n3. Confirm deletion\n\nWarning: This will delete the subcategory AND all words inside it. This action cannot be undone unless you have a backup.',
           ),
           _buildSection(
             context,
             'Building Sentences',
-            'In word lists, tap multiple words to build a sentence. Your selection appears at the bottom. Tap the speaker icon to speak the full sentence, or the X to clear.',
+            'In word lists, tap multiple words to build a sentence:\n\n1. Tap words in order\n2. Your selection appears at the bottom\n3. Tap the speaker icon to speak the full sentence\n4. Tap the X to clear and start over\n\nPerfect for constructing longer phrases!',
           ),
           _buildSection(
             context,
             'Adjusting Display Size',
-            'Tap the grid icon (⊞) in the top right corner to access size controls:\n\n• Text Size slider: Adjusts font size (100% - 300%)\n• Tile Size slider: Adjusts tile dimensions (80% - 200%)\n\nText and tiles resize independently for optimal accessibility.',
+            'Tap the grid icon (⊞) in the top right corner to access size controls:\n\n• Text Size slider: Adjusts font size (100% - 300%)\n• Tile Size slider: Adjusts tile dimensions (80% - 200%)\n\nText and tiles resize independently across all screens for optimal accessibility and comfort.',
           ),
           _buildSection(
             context,
@@ -75,12 +80,12 @@ class HowToUsePage extends StatelessWidget {
           _buildSection(
             context,
             'Backup & Restore',
-            'Save your custom vocabulary:\n\n1. Open menu → Backup & Restore\n2. Tap "Create Backup" to save all custom content\n3. Share or save the backup file\n4. Use "Restore from Backup" to reload your content on any device\n\nBackups include all custom tiles and words but not settings.',
+            'Save your custom vocabulary and images:\n\n1. Open menu → Backup & Restore\n2. Tap "Create Backup" to save all custom content\n3. Share or save the backup file\n4. Use "Restore from Backup" to reload your content on any device\n\nBackups include:\n• All custom tiles and words\n• All custom images\n• Category organization\n\nBackups do NOT include:\n• Voice settings\n• Display size settings',
           ),
           _buildSection(
             context,
             'Tips for Best Experience',
-            '• Use the text-to-speech input for spontaneous communication\n• Add images to commonly used words for better recognition\n• Test different voices to find one that works offline\n• Use the Yes/No screen for quick binary questions\n• Create custom categories for frequently used phrases\n• Adjust text and tile sizes independently for comfort\n• Make regular backups of your custom vocabulary\n• Enable "Use System Default Voice" if experiencing voice issues',
+            '• Use the text-to-speech input for spontaneous communication\n• Add images to commonly used words for better recognition\n• Long-press tiles to access edit and image options\n• Test different voices to find one that works offline\n• Use the Yes/No screen for quick binary questions\n• Create custom categories for frequently used phrases\n• Adjust text and tile sizes independently for comfort\n• Make regular backups of your custom vocabulary\n• Enable "Use System Default Voice" if experiencing voice issues\n• Images automatically update when changed - no need to restart',
           ),
           const SizedBox(height: 24),
         ],
