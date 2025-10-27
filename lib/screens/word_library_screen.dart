@@ -49,6 +49,23 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
     }
   }
 
+  Future<void> _loadImages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString(StoreKeys.wordImages(widget.categoryKey));
+      if (stored != null && stored.isNotEmpty) {
+        final Map<String, dynamic> decoded = {};
+        stored.split('|||').forEach((entry) {
+          final parts = entry.split(':::');
+          if (parts.length == 2) decoded[parts[0]] = parts[1];
+        });
+        setState(() {
+          _wordImages = decoded.cast<String, String>();
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _saveWords() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -56,28 +73,12 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadImages() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final imageMapJson = prefs.getString(StoreKeys.wordImages(widget.categoryKey));
-      if (imageMapJson != null) {
-        final Map<String, dynamic> decoded = Map<String, dynamic>.from(
-          Uri.splitQueryString(imageMapJson),
-        );
-        setState(() {
-          _wordImages = decoded.map((k, v) => MapEntry(k, v.toString()));
-        });
-      }
-    } catch (_) {}
-  }
-
   Future<void> _saveImages() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Simple encoding: word1=path1&word2=path2
       final encoded = _wordImages.entries
-          .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-          .join('&');
+          .map((e) => '${e.key}:::${e.value}')
+          .join('|||');
       await prefs.setString(StoreKeys.wordImages(widget.categoryKey), encoded);
     } catch (_) {}
   }
@@ -92,70 +93,46 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
       if (result == null || result.files.isEmpty) return;
 
       final file = File(result.files.first.path!);
-      
+      if (!await file.exists()) return;
+
       // Load and resize image
       final bytes = await file.readAsBytes();
       final image = img.decodeImage(bytes);
-      
       if (image == null) return;
 
       // Resize and crop to 4:3 aspect ratio
       final targetWidth = 400;
       final targetHeight = 300; // 4:3 ratio
+
       img.Image resized;
-      
+
       // Calculate the scale needed to cover the target dimensions
       final scaleX = targetWidth / image.width;
       final scaleY = targetHeight / image.height;
       final scale = scaleX > scaleY ? scaleX : scaleY;
-      
+
       // Resize image to cover target dimensions
       final scaledWidth = (image.width * scale).round();
       final scaledHeight = (image.height * scale).round();
       final temp = img.copyResize(image, width: scaledWidth, height: scaledHeight);
-      
+
       // Crop from center to exact 4:3 ratio
       final x = (temp.width - targetWidth) ~/ 2;
       final y = (temp.height - targetHeight) ~/ 2;
       resized = img.copyCrop(temp, x: x, y: y, width: targetWidth, height: targetHeight);
 
-      // Save as JPEG with 85% quality
-      final jpegBytes = img.encodeJpg(resized, quality: 85);
-
       // Save to app directory
       final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory('${appDir.path}/word_images');
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
-      }
-
-      final fileName = '${widget.categoryKey}_${word.replaceAll(RegExp(r'[^\w\s]'), '_')}.jpg';
-      final savedFile = File('${imagesDir.path}/$fileName');
-      await savedFile.writeAsBytes(jpegBytes);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'word_${widget.categoryKey}_${word.replaceAll(RegExp(r'[^\w\s]+'), '')}_$timestamp.jpg';
+      final savedFile = File('${appDir.path}/$fileName');
+      await savedFile.writeAsBytes(img.encodeJpg(resized, quality: 85));
 
       setState(() {
         _wordImages[word] = savedFile.path;
       });
       await _saveImages();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Image added successfully'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error adding image: $e'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
+    } catch (_) {}
   }
 
   Future<void> _removeImage(String word) async {
@@ -166,62 +143,70 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
         if (await file.exists()) {
           await file.delete();
         }
-        setState(() {
-          _wordImages.remove(word);
-        });
-        await _saveImages();
       }
+      setState(() {
+        _wordImages.remove(word);
+      });
+      await _saveImages();
     } catch (_) {}
   }
 
   void _showImageOptions(String word) {
     final hasImage = _wordImages.containsKey(word);
-
+    
     showModalBottomSheet(
       context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.image),
-                  title: Text(hasImage ? 'Change Image' : 'Add Image'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickAndSaveImage(word);
-                  },
-                ),
-                if (hasImage)
-                  ListTile(
-                    leading: const Icon(Icons.delete),
-                    title: const Text('Remove Image'),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _removeImage(word);
-                    },
-                  ),
-                ListTile(
-                  leading: const Icon(Icons.delete_forever),
-                  title: const Text('Delete Word'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _confirmDeleteWord(word);
-                  },
-                ),
-              ],
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(hasImage ? Icons.edit : Icons.add_photo_alternate),
+              title: Text(hasImage ? 'Change Image' : 'Add Image'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndSaveImage(word);
+              },
             ),
-          ),
-        );
-      },
+            if (hasImage)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Remove Image'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _removeImage(word);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit Word'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _editWord(word);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete),
+              title: const Text('Delete Word'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteWord(word);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  void _addWord() {
-    String word = '';
-
+  void _editWord(String oldWord) {
+    String newWord = oldWord;
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -229,7 +214,7 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
       builder: (ctx) {
         final keyboardPadding = MediaQuery.of(ctx).viewInsets.bottom;
         final systemNavPadding = MediaQuery.of(ctx).padding.bottom;
-
+        
         return Padding(
           padding: EdgeInsets.only(
             left: 16,
@@ -242,59 +227,57 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Add Word/Phrase',
+                'Edit Word/Phrase',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'to ${widget.categoryDisplay}',
-                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               TextField(
                 autofocus: true,
-                onChanged: (v) => word = v,
-                maxLines: 3,
-                minLines: 1,
+                controller: TextEditingController(text: oldWord),
                 decoration: const InputDecoration(
-                  labelText: 'Word or phrase',
-                  hintText: 'e.g., I would like some water',
+                  labelText: 'Word or Phrase',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.chat_bubble_outline),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final t = word.trim();
-                        if (t.isEmpty) {
-                          Navigator.pop(ctx);
-                          return;
+                onChanged: (val) => newWord = val.trim(),
+                onSubmitted: (_) {
+                  if (newWord.isNotEmpty && newWord != oldWord) {
+                    final index = _words.indexOf(oldWord);
+                    if (index != -1) {
+                      setState(() {
+                        _words[index] = newWord;
+                        if (_wordImages.containsKey(oldWord)) {
+                          _wordImages[newWord] = _wordImages[oldWord]!;
+                          _wordImages.remove(oldWord);
                         }
-                        setState(() {
-                          _words.add(t);
-                        });
-                        await _saveWords();
-                        if (mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('Add'),
-                    ),
-                  ),
-                ],
+                      });
+                      _saveWords();
+                      _saveImages();
+                    }
+                  }
+                  Navigator.pop(ctx);
+                },
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () {
+                  if (newWord.isNotEmpty && newWord != oldWord) {
+                    final index = _words.indexOf(oldWord);
+                    if (index != -1) {
+                      setState(() {
+                        _words[index] = newWord;
+                        if (_wordImages.containsKey(oldWord)) {
+                          _wordImages[newWord] = _wordImages[oldWord]!;
+                          _wordImages.remove(oldWord);
+                        }
+                      });
+                      _saveWords();
+                      _saveImages();
+                    }
+                  }
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Save'),
               ),
             ],
           ),
@@ -303,66 +286,226 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
     );
   }
 
-  void _confirmDeleteWord(String word) {
+  void _deleteWord(String word) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Delete Word'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Are you sure you want to delete this word/phrase?',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(8),
+        content: Text('Delete "$word"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              setState(() {
+                _words.remove(word);
+                _removeImage(word);
+              });
+              _saveWords();
+              Navigator.pop(ctx);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addWord() {
+    String word = '';
+    String? tempImagePath;
+
+    Future<void> pickImage(StateSetter setModalState) async {
+      try {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.image,
+          allowMultiple: false,
+        );
+
+        if (result == null || result.files.isEmpty) return;
+
+        final file = File(result.files.first.path!);
+        if (!await file.exists()) return;
+
+        // Load and resize image
+        final bytes = await file.readAsBytes();
+        final image = img.decodeImage(bytes);
+        if (image == null) return;
+
+        // Resize and crop to 4:3 aspect ratio
+        final targetWidth = 400;
+        final targetHeight = 300;
+
+        img.Image resized;
+        final scaleX = targetWidth / image.width;
+        final scaleY = targetHeight / image.height;
+        final scale = scaleX > scaleY ? scaleX : scaleY;
+
+        final scaledWidth = (image.width * scale).round();
+        final scaledHeight = (image.height * scale).round();
+        final temp = img.copyResize(image, width: scaledWidth, height: scaledHeight);
+
+        final x = (temp.width - targetWidth) ~/ 2;
+        final y = (temp.height - targetHeight) ~/ 2;
+        resized = img.copyCrop(temp, x: x, y: y, width: targetWidth, height: targetHeight);
+
+        // Save to temp location
+        final appDir = await getApplicationDocumentsDirectory();
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = 'temp_word_$timestamp.jpg';
+        final savedFile = File('${appDir.path}/$fileName');
+        await savedFile.writeAsBytes(img.encodeJpg(resized, quality: 85));
+
+        setModalState(() {
+          tempImagePath = savedFile.path;
+        });
+      } catch (_) {}
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final keyboardPadding = MediaQuery.of(ctx).viewInsets.bottom;
+        final systemNavPadding = MediaQuery.of(ctx).padding.bottom;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: keyboardPadding + systemNavPadding + 16,
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.chat_bubble_outline, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      word,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                  const Text(
+                    'Add Word/Phrase',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'to ${widget.categoryDisplay}',
+                    style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                     ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  if (tempImagePath != null) ...[
+                    Container(
+                      height: 150,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Theme.of(ctx).colorScheme.outline),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(tempImagePath!),
+                          key: ValueKey(tempImagePath),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        setModalState(() {
+                          if (tempImagePath != null) {
+                            File(tempImagePath!).delete();
+                            tempImagePath = null;
+                          }
+                        });
+                      },
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Remove Image'),
+                    ),
+                    const SizedBox(height: 16),
+                  ] else ...[
+                    OutlinedButton.icon(
+                      onPressed: () => pickImage(setModalState),
+                      icon: const Icon(Icons.add_photo_alternate),
+                      label: const Text('Add Image (Optional)'),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  TextField(
+                    autofocus: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Word or Phrase',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (val) => word = val.trim(),
+                    onSubmitted: (_) {
+                      if (word.isNotEmpty) {
+                        setState(() => _words.add(word));
+                        _saveWords();
+                        if (tempImagePath != null) {
+                          _wordImages[word] = tempImagePath!;
+                          _saveImages();
+                        }
+                        Navigator.pop(ctx);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () {
+                      if (word.isNotEmpty) {
+                        setState(() => _words.add(word));
+                        _saveWords();
+                        if (tempImagePath != null) {
+                          _wordImages[word] = tempImagePath!;
+                          _saveImages();
+                        }
+                        Navigator.pop(ctx);
+                      }
+                    },
+                    child: const Text('Add Word'),
                   ),
                 ],
               ),
-            ),
-          ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _deleteSelected() {
+    if (_selectedWords.isEmpty) return;
+    
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Words'),
+        content: Text(
+          'Delete ${_selectedWords.length} selected word(s)?',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              await _removeImage(word);
+          FilledButton(
+            onPressed: () {
               setState(() {
-                _words.remove(word);
+                for (final word in _selectedWords) {
+                  _words.remove(word);
+                  _removeImage(word);
+                }
+                _selectedWords.clear();
               });
-              await _saveWords();
-              if (mounted) Navigator.pop(context);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Word deleted'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
+              _saveWords();
+              Navigator.pop(ctx);
             },
             child: const Text('Delete'),
           ),
@@ -374,7 +517,7 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
+    
     return Scaffold(
       appBar: AppBar(
         leading: const LargeBackButton(),
@@ -387,150 +530,112 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
           ),
         ],
       ),
+      floatingActionButton: _selectedWords.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: _deleteSelected,
+              icon: const Icon(Icons.delete),
+              label: Text('Delete ${_selectedWords.length}'),
+            )
+          : null,
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
               child: ValueListenableBuilder<double>(
                 valueListenable: TileSizeController.instance.gridScale,
-                builder: (context, gridScaleValue, __) => GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 180 * gridScaleValue,
-                    childAspectRatio: 1.1,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                  ),
-                  itemCount: _words.length,
-                  itemBuilder: (context, index) {
-                    final word = _words[index];
-                    final imagePath = _wordImages[word];
-                    final hasImage = imagePath != null && File(imagePath).existsSync();
+                builder: (context, gridScaleValue, __) => ValueListenableBuilder<double>(
+                  valueListenable: TileSizeController.instance.scale,
+                  builder: (context, textScaleValue, __) => GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 180 * gridScaleValue,
+                      childAspectRatio: 1.1,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                    ),
+                    itemCount: _words.length,
+                    itemBuilder: (context, index) {
+                      final word = _words[index];
+                      final imagePath = _wordImages[word];
+                      final hasImage = imagePath != null && File(imagePath).existsSync();
 
-                    return GestureDetector(
-                      onLongPress: () => _showImageOptions(word),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.all(8),
-                        ),
-                        onPressed: () {
-                          TtsController.instance.speak(word);
-                          setState(() => _selectedWords.add(word));
-                        },
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: TileSizeController.instance.scale,
-                          builder: (context, textScaleValue, child) {
-                            return LayoutBuilder(
-                              builder: (context, constraints) {
-                                if (hasImage) {
-                                  // Display image with text below
-                                  return Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Expanded(
-                                        flex: 2,
-                                        child: Image.file(
-                                          File(imagePath),
-                                          fit: BoxFit.contain,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Flexible(
-                                        flex: 1,
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            word,
-                                            textAlign: TextAlign.center,
-                                            maxLines: 2,
-                                            style: TextStyle(
-                                              fontSize: 14 * textScaleValue,
-                                              fontWeight: FontWeight.w600,
-                                              height: 1.1,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
+                      return GestureDetector(
+                        onLongPress: () => _showImageOptions(word),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.all(8),
+                          ),
+                          onPressed: () {
+                            if (_selectedWords.isEmpty) {
+                              TtsController.instance.speak(word);
+                            } else {
+                              setState(() {
+                                if (_selectedWords.contains(word)) {
+                                  _selectedWords.remove(word);
                                 } else {
-                                  // Text-only tile
-                                  final textPainter = TextPainter(
-                                    text: TextSpan(
-                                      text: word,
-                                      style: TextStyle(
-                                        fontSize: 16 * textScaleValue,
-                                        fontWeight: FontWeight.w600,
+                                  _selectedWords.add(word);
+                                }
+                              });
+                            }
+                          },
+                          child: Stack(
+                            children: [
+                              if (hasImage)
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      flex: 2,
+                                      child: Image.file(
+                                        File(imagePath),
+                                        key: ValueKey(imagePath),
+                                        fit: BoxFit.contain,
                                       ),
                                     ),
-                                    maxLines: 2,
-                                    textDirection: TextDirection.ltr,
-                                  )..layout(maxWidth: constraints.maxWidth);
-
-                                  if (textPainter.didExceedMaxLines) {
-                                    return FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: SizedBox(
-                                        width: constraints.maxWidth,
-                                        child: Text(
-                                          word,
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          style: TextStyle(
-                                            fontSize: 16 * textScaleValue,
-                                            fontWeight: FontWeight.w600,
-                                            height: 1.2,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  } else {
-                                    return Center(
+                                    const SizedBox(height: 4),
+                                    Flexible(
                                       child: Text(
                                         word,
                                         textAlign: TextAlign.center,
+                                        style: TextStyle(fontSize: 14 * textScaleValue),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 16 * textScaleValue,
-                                          fontWeight: FontWeight.w600,
-                                          height: 1.2,
-                                        ),
                                       ),
-                                    );
-                                  }
-                                }
-                              },
-                            );
-                          },
+                                    ),
+                                  ],
+                                )
+                              else
+                                Center(
+                                  child: Text(
+                                    word,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 16 * textScaleValue),
+                                  ),
+                                ),
+                              if (_selectedWords.contains(word))
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: cs.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.check,
+                                      size: 16,
+                                      color: cs.onPrimary,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ),
-            Container(
-              color: cs.surfaceContainerHighest,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _selectedWords.join(' '),
-                      style: const TextStyle(fontSize: 16),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.volume_up),
-                    onPressed: () => TtsController.instance.speak(_selectedWords.join(' ')),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () => setState(() => _selectedWords.clear()),
-                  ),
-                ],
               ),
             ),
           ],

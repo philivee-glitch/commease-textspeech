@@ -19,6 +19,11 @@ class HowToUsePage extends StatelessWidget {
           ),
           _buildSection(
             context,
+            'Type-to-Speech Input',
+            'At the bottom of the home screen, you\'ll find a text input field:\n\n1. Tap the field and type any custom phrase\n2. Press "Speak" button (or Enter) to hear it spoken\n3. Text stays in the field until you clear it manually\n\nPerfect for saying anything not in your pre-set tiles!',
+          ),
+          _buildSection(
+            context,
             'Quick Yes/No Responses',
             'Tap the "Yes / No" tile on the home screen for instant access to large YES (green) and NO (red) buttons. Perfect for quick binary responses.',
           ),
@@ -39,6 +44,11 @@ class HowToUsePage extends StatelessWidget {
           ),
           _buildSection(
             context,
+            'Adding Images to Word Tiles',
+            'Personalize your word tiles with custom images:\n\n1. Navigate to any category with word tiles\n2. Long-press a word tile\n3. Select "Add Image" or "Change Image"\n4. Choose a photo from your device\n5. The image will appear on the tile with text below\n\nImages are automatically optimized and cropped to 4:3 ratio. To remove an image, long-press and select "Remove Image".',
+          ),
+          _buildSection(
+            context,
             'Deleting Tiles',
             'Long-press any custom tile and confirm deletion. Note: Default tiles (Needs, Feelings, etc.) cannot be deleted, but you can delete any custom tiles you create.',
           ),
@@ -50,7 +60,7 @@ class HowToUsePage extends StatelessWidget {
           _buildSection(
             context,
             'Adjusting Display Size',
-            '1. Open menu → Settings\n2. Tap "Adjust Display Size"\n3. Use sliders to adjust:\n   • Text Size (100% - 300%)\n   • Tile Size (80% - 200%)\n\nMake text and tiles larger for better visibility.',
+            'Tap the grid icon (⊞) in the top right corner to access size controls:\n\n• Text Size slider: Adjusts font size (100% - 300%)\n• Tile Size slider: Adjusts tile dimensions (80% - 200%)\n\nText and tiles resize independently for optimal accessibility.',
           ),
           _buildSection(
             context,
@@ -70,7 +80,7 @@ class HowToUsePage extends StatelessWidget {
           _buildSection(
             context,
             'Tips for Best Experience',
-            '• Test different voices to find one that works offline\n• Use the Yes/No screen for quick binary questions\n• Create custom categories for frequently used phrases\n• Increase text size if needed for better readability\n• Make regular backups of your custom vocabulary\n• Enable "Use System Default Voice" if experiencing voice issues',
+            '• Use the text-to-speech input for spontaneous communication\n• Add images to commonly used words for better recognition\n• Test different voices to find one that works offline\n• Use the Yes/No screen for quick binary questions\n• Create custom categories for frequently used phrases\n• Adjust text and tile sizes independently for comfort\n• Make regular backups of your custom vocabulary\n• Enable "Use System Default Voice" if experiencing voice issues',
           ),
           const SizedBox(height: 24),
         ],

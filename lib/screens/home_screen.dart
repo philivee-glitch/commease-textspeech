@@ -25,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<HomeItem> _custom = [];
   late Map<String, int> _colourMap;
   final TextEditingController _textController = TextEditingController();
+  final FocusNode _textFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -36,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _textController.dispose();
+    _textFocusNode.dispose();
     super.dispose();
   }
 
@@ -219,8 +221,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _confirmDeleteHomeTile(HomeItem item) {
-    final isSeeded = seededHome.any((s) => s.label == item.label && s.type == item.type);
-    if (isSeeded) {
+    final isCustom = _custom.any((c) => c.label == item.label && c.type == item.type);
+    
+    if (!isCustom) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Default tiles cannot be deleted'),
@@ -276,123 +279,140 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Tile grid
           Expanded(
-            child: ValueListenableBuilder<double>(
-              valueListenable: TileSizeController.instance.gridScale,
-              builder: (context, gridScale, child) {
-                final effectiveCount = (2.5 / gridScale).round().clamp(1, 4);
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return ValueListenableBuilder<double>(
+                  valueListenable: TileSizeController.instance.gridScale,
+                  builder: (context, gridScaleValue, child) {
+                    // Calculate tiles based on screen width and gridScale
+                    // Base tile size is 120px, adjusted by gridScale
+                    final baseTileSize = (120 * gridScaleValue).clamp(125, double.infinity);
+                    final tilesAcross = (constraints.maxWidth / baseTileSize).floor().clamp(2, 12);
 
-                return GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: effectiveCount,
-                    childAspectRatio: 1.0,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: _homeItems.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == _homeItems.length) {
-                      return ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                          foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                          padding: const EdgeInsets.all(4),
-                        ),
-                        onPressed: _addHomeTile,
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: TileSizeController.instance.scale,
-                          builder: (context, textScaleValue, child) {
-                            return _iconLabel('Add tile', Icons.add, textScaleValue);
-                          },
-                        ),
-                      );
-                    }
-
-                    final item = _homeItems[index];
-                    final title = titleCase(item.label);
-                    final colour = _getHomeTileColour(item.label);
-
-                    return GestureDetector(
-                      onLongPress: () => _confirmDeleteHomeTile(item),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: colour,
-                          foregroundColor: onColor(colour, Theme.of(context).brightness),
-                          padding: const EdgeInsets.all(4),
-                        ),
-                        onPressed: () {
-                          if (item.type == HomeItemType.quick) {
-                            TtsController.instance.speak(title);
-                            ReviewPromptService.incrementUsageAndCheckPrompt(context);
-                            return;
-                          }
-
-                          final raw = item.label;
-
-                          // Special case for Yes/No screen - navigate silently
-                          if (raw.toLowerCase() == 'yes / no') {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const YesNoScreen()),
-                            );
-                            return;
-                          }
-
-                          // Speak for all other category tiles
-                          TtsController.instance.speak(title);
-                          ReviewPromptService.incrementUsageAndCheckPrompt(context);
-
-                          final isSeeded = seededHome.any((s) => s.label == item.label);
-                          final hasNested = seededNested.containsKey(raw);
-                          final hasFlat = seededFlat.containsKey(raw);
-
-                          // Flat categories (needs, feelings) go directly to word library
-                          if (hasFlat && isSeeded) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => WordLibraryScreen(
-                                  categoryDisplay: title,
-                                  categoryKey: raw,
-                                  initialWords: seededFlat[raw]!,
-                                ),
-                              ),
-                            );
-                          }
-                          // Nested categories (food, places, people) go to subcategory menu
-                          else if (hasNested && isSeeded) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => SubcategoryMenuScreen(
-                                  category: title,
-                                  parentKeyRaw: raw,
-                                  subcategories: seededNested[raw]!,
-                                ),
-                              ),
-                            );
-                          }
-                          // Custom categories go to subcategory menu
-                          else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => SubcategoryMenuScreen(
-                                  category: title,
-                                  parentKeyRaw: raw,
-                                  subcategories: const {},
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: TileSizeController.instance.scale,
-                          builder: (context, textScaleValue, child) {
-                            return _iconLabel(title, iconFor(item.label), textScaleValue);
-                          },
-                        ),
+                    return GridView.builder(
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: tilesAcross,
+                        childAspectRatio: 1.0,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
+                      itemCount: _homeItems.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == _homeItems.length) {
+                          return ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                              padding: const EdgeInsets.all(4),
+                            ),
+                            onPressed: _addHomeTile,
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: TileSizeController.instance.scale,
+                              builder: (context, textScaleValue, child) {
+                                return _iconLabel('Add tile', Icons.add, textScaleValue);
+                              },
+                            ),
+                          );
+                        }
+
+                        final item = _homeItems[index];
+                        final title = titleCase(item.label);
+                        final colour = _getHomeTileColour(item.label);
+
+                        return GestureDetector(
+                          onLongPress: () => _confirmDeleteHomeTile(item),
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colour,
+                              foregroundColor: onColor(colour, Theme.of(context).brightness),
+                              padding: const EdgeInsets.all(4),
+                            ),
+                            onPressed: () {
+                              if (item.type == HomeItemType.quick) {
+                                TtsController.instance.speak(title);
+                                ReviewPromptService.incrementUsageAndCheckPrompt(context);
+                                return;
+                              }
+
+                              final raw = item.label;
+
+                              // Special case for Yes/No screen - navigate silently
+                              if (raw.toLowerCase() == 'yes / no') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const YesNoScreen()),
+                                );
+                                return;
+                              }
+
+                              // Speak for all other category tiles
+                              TtsController.instance.speak(title);
+                              ReviewPromptService.incrementUsageAndCheckPrompt(context);
+
+                              final isSeeded = seededHome.any((s) => s.label == item.label);
+                              final hasNested = seededNested.containsKey(raw);
+                              final hasFlat = seededFlat.containsKey(raw);
+
+                              // Flat categories (needs, feelings) go directly to word library
+                              if (hasFlat && isSeeded) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => WordLibraryScreen(
+                                      categoryDisplay: title,
+                                      categoryKey: raw,
+                                      initialWords: seededFlat[raw]!,
+                                    ),
+                                  ),
+                                );
+                              }
+                              // Nested categories (food, places, people) go to subcategory menu
+                              // Nested categories (food, places, people) go to subcategory menu
+                              else if (hasNested && isSeeded) {
+                                final nestedMap = seededNested[raw]!;
+                                final subcategoriesList = nestedMap.entries.map((entry) {
+                                  return {
+                                    'display': entry.key[0].toUpperCase() + entry.key.substring(1),
+                                    'key': entry.key,
+                                    'words': entry.value,
+                                  };
+                                }).toList();
+                                
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SubcategoryMenuScreen(
+                                      parentCategoryDisplay: title,
+                                      parentCategoryKey: raw,
+                                      subcategories: subcategoriesList,
+                                    ),
+                                  ),
+                                );
+                              }
+                              // Custom categories go to subcategory menu
+                              else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => SubcategoryMenuScreen(
+                                      parentCategoryDisplay: title,
+                                      parentCategoryKey: raw,
+                                      subcategories: const [],
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: TileSizeController.instance.scale,
+                              builder: (context, textScaleValue, child) {
+                                return _iconLabel(title, iconFor(item.label), textScaleValue);
+                              },
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
                 );
@@ -419,6 +439,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: TextField(
                       controller: _textController,
+                      focusNode: _textFocusNode,
+                      enableInteractiveSelection: false,
                       decoration: InputDecoration(
                         hintText: 'Type to speak...',
                         border: OutlineInputBorder(
