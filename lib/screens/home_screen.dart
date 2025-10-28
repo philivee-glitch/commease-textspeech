@@ -13,6 +13,7 @@ import 'subcategory_menu_screen.dart';
 import 'word_library_screen.dart';
 import 'yes_no_screen.dart';
 import '../services/review_prompt_service.dart';
+import '../widgets/accessible_keyboard.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,6 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late Map<String, int> _colourMap;
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocusNode = FocusNode();
+  bool _showCustomKeyboard = false;
 
   @override
   void initState() {
@@ -472,6 +474,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+          // Custom keyboard
+          if (_showCustomKeyboard)
+            AccessibleKeyboard(
+              controller: _textController,
+              onClose: () {
+                setState(() {
+                  _showCustomKeyboard = false;
+                });
+              },
+            ),
         ],
       ),
     );
