@@ -340,8 +340,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Image.asset(
               'assets/app_icon.png',
-              height: 32,
-              width: 32,
+              height: 28,
+              width: 28,
             ),
             const SizedBox(width: 8),
             const Text('CommEase'),

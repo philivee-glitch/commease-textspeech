@@ -3,7 +3,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 
 class RevenueCatService {
   static const String _androidApiKey = 'goog_bSwObNbWEtzFQQIsaTidZzrAyYD';
-  static const String _iosApiKey = 'appcfaf1fd845';
+  static const String _iosApiKey = 'appl_XanjufnpnOxBSiNHEPfChSQswag';
   static const String _entitlementId = 'pro';
 
   static Future<void> initialize() async {
