@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'terms_screen.dart';
 
 class AboutPage extends StatefulWidget {
   const AboutPage({super.key});
@@ -115,6 +116,98 @@ class _AboutPageState extends State<AboutPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      const Text(
+                        'Subscription Plans',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.workspace_premium,
+                        color: Colors.amber[700],
+                        size: 24,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'CommEase offers flexible premium access options:',
+                    style: TextStyle(fontSize: 16, height: 1.5),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildPricingOption(
+                    'Monthly',
+                    '\$4.99/month',
+                    '3-day free trial included',
+                  ),
+                  _buildPricingOption(
+                    'Annual',
+                    '\$49.99/year',
+                    '3-day free trial • Save \$10',
+                  ),
+                  _buildPricingOption(
+                    'Lifetime',
+                    '\$79.99 one-time',
+                    'Pay once, own forever',
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'All subscriptions include unlimited custom tiles, images, categories, and full access to all features.',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[700], height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const TermsAndConditionsScreen(isInfoPage: true),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.article_outlined,
+                            size: 18,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'View full subscription terms',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Theme.of(context).primaryColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   const Text(
                     'Developer',
                     style: TextStyle(
@@ -126,11 +219,6 @@ class _AboutPageState extends State<AboutPage> {
                   const Text(
                     'Developed by CodeNestle',
                     style: TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Perth, Western Australia',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   ),
                 ],
               ),
@@ -163,6 +251,7 @@ class _AboutPageState extends State<AboutPage> {
                   _buildPackage('share_plus', 'Sharing backup files'),
                   _buildPackage('path_provider', 'File system access'),
                   _buildPackage('package_info_plus', 'App version information'),
+                  _buildPackage('purchases_flutter', 'Subscription management'),
                 ],
               ),
             ),
@@ -188,6 +277,60 @@ class _AboutPageState extends State<AboutPage> {
             child: Text(
               text,
               style: const TextStyle(fontSize: 15, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPricingOption(String title, String price, String description) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      price,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

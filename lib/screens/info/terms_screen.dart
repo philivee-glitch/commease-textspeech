@@ -42,6 +42,51 @@ class _TermsAndConditionsScreenState extends State<TermsAndConditionsScreen> {
                 'No medical or emergency use',
                 'CommEase is not a medical device and does not provide clinical, legal, or safety advice. Do not rely on it in emergencies. In an emergency, contact your local emergency number.',
               ),
+              
+              // Subscription Terms Section
+              _buildSectionHeader('SUBSCRIPTION TERMS'),
+              
+              _buildSection(
+                'Subscription plans',
+                'CommEase offers three premium access options:\n\n'
+                '• Monthly Subscription: \$4.99 per month with a 3-day free trial\n'
+                '• Annual Subscription: \$49.99 per year with a 3-day free trial\n'
+                '• Lifetime Purchase: \$79.99 one-time payment (no subscription)\n\n'
+                'All subscriptions include unlimited access to premium features including custom tiles, images, categories, text-to-speech input, and all unlocked content.',
+              ),
+              
+              _buildSection(
+                'Free trial',
+                'New subscribers to monthly or annual plans receive a 3-day free trial. You will not be charged during the trial period. If you do not cancel before the trial ends, your subscription will automatically begin and you will be charged the subscription fee.',
+              ),
+              
+              _buildSection(
+                'Automatic renewal',
+                'Monthly and annual subscriptions automatically renew at the end of each billing period unless you cancel at least 24 hours before the renewal date. Your payment method will be charged automatically upon renewal.',
+              ),
+              
+              _buildSection(
+                'Cancellation',
+                'You may cancel your subscription at any time through your Google Play Store account settings. Cancellation takes effect at the end of your current billing period. You will retain access to premium features until the end of the paid period.',
+              ),
+              
+              _buildSection(
+                'Refunds',
+                'All purchases are processed through Google Play Store and are subject to Google\'s refund policy. Refund requests should be directed to Google Play Store support. Generally, refunds are not provided for partial subscription periods or for the lifetime purchase after the refund window has closed.',
+              ),
+              
+              _buildSection(
+                'Price changes',
+                'We reserve the right to change subscription prices with 30 days notice. Price changes will not affect your current subscription period but will apply upon renewal unless you cancel before the change takes effect.',
+              ),
+              
+              _buildSection(
+                'Access after subscription ends',
+                'If your subscription expires or is cancelled, you will lose access to premium features but will retain access to the free tier. Your custom content will be preserved and will become accessible again if you resubscribe.',
+              ),
+              
+              _buildSectionHeader('GENERAL TERMS'),
+              
               _buildSection(
                 'Your responsibilities',
                 'You are responsible for how you use the app and the content you input or share. Use clear judgment and verify important information independently.',
@@ -52,7 +97,7 @@ class _TermsAndConditionsScreenState extends State<TermsAndConditionsScreen> {
               ),
               _buildSection(
                 'Privacy summary',
-                'Your custom phrases and preferences are saved on your device using local storage (SharedPreferences). By default no personal data is sent to a remote server.',
+                'Your custom phrases and preferences are saved on your device using local storage. Subscription information is processed through RevenueCat and Google Play Store. See our Privacy Policy for complete details.',
               ),
               _buildSection(
                 'Data you add',
@@ -60,11 +105,11 @@ class _TermsAndConditionsScreenState extends State<TermsAndConditionsScreen> {
               ),
               _buildSection(
                 'Third-party services',
-                'The app may use platform services provided by Apple or Google (for example, text-to-speech engines) which are governed by their own terms and privacy policies.',
+                'The app uses platform services provided by Google (text-to-speech engines, Google Play Billing) and RevenueCat (subscription management) which are governed by their own terms and privacy policies.',
               ),
               _buildSection(
                 'Children',
-                'If a child uses the app, a parent or guardian should supervise and manage any information stored on the device.',
+                'If a child uses the app, a parent or guardian should supervise and manage any information stored on the device and any subscription purchases.',
               ),
               _buildSection(
                 'Changes to these terms',
@@ -72,7 +117,7 @@ class _TermsAndConditionsScreenState extends State<TermsAndConditionsScreen> {
               ),
               _buildSection(
                 'Contact',
-                'Questions or concerns? Please contact the developer using the details provided in the app store listing.',
+                'Questions or concerns? Please contact support@codenestle.com or use the contact details provided in the Google Play Store listing.',
               ),
               if (!widget.isInfoPage) ...[
                 const SizedBox(height: 24),
@@ -95,6 +140,20 @@ class _TermsAndConditionsScreenState extends State<TermsAndConditionsScreen> {
               ]
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 16),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).primaryColor,
         ),
       ),
     );
