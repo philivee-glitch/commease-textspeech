@@ -335,7 +335,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CommEase'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/app_icon.png',
+              height: 32,
+              width: 32,
+            ),
+            const SizedBox(width: 8),
+            const Text('CommEase'),
+          ],
+        ),
         centerTitle: true,
         actions: [
           if (!_isPremium)
