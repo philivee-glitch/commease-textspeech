@@ -335,21 +335,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'assets/app_icon.png',
-              height: 28,
-              width: 28,
-            ),
-            const SizedBox(width: 8),
-            const Text('CommEase'),
-          ],
-        ),
-        centerTitle: true,
+        title: const Text('CommEase'),
         actions: [
-          if (!_isPremium)
             TextButton.icon(
               onPressed: () async {
                 final result = await Navigator.push(
@@ -433,7 +420,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           return ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),                              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
                               padding: const EdgeInsets.all(4),
                             ),
                             onPressed: _addHomeTile,
@@ -460,7 +449,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: isLocked ? colour.withOpacity(0.3) : colour,
                               foregroundColor: onColor(colour, Theme.of(context).brightness),
-                              padding: const EdgeInsets.all(4),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),                              padding: const EdgeInsets.all(4),
                             ),
                             onPressed: () {
                               final raw = item.label;
