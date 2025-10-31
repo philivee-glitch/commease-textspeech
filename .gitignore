@@ -1,1 +1,16 @@
 ﻿dist/
+# Build files
+build/
+.dart_tool/
+.idea/
+
+# Generated files
+*.g.dart
+*.freezed.dart
+
+# Other
+.DS_Store
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock

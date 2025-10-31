@@ -12,6 +12,7 @@ dependencies:
   image: ^4.0.17
   package_info_plus: ^8.0.0
   path_provider: ^2.1.5
+  purchases_flutter: ^8.2.2
   reorderable_grid_view: ^2.2.8
   share_plus: ^12.0.0
   shared_preferences: ^2.3.2

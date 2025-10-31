@@ -8,6 +8,8 @@ import '../constants/storage_keys.dart';
 import '../tts_controller.dart';
 import '../tile_size.dart';
 import '../widgets/large_back_button.dart';
+import '../services/revenue_cat_service.dart';
+import 'paywall_screen.dart';
 
 class WordLibraryScreen extends StatefulWidget {
   final String categoryDisplay;
@@ -29,12 +31,80 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   List<String> _words = [];
   final List<String> _selectedWords = [];
   Map<String, String> _wordImages = {}; // Maps word -> image path
+  bool _isPremium = false;
+  bool _isLoadingPremium = true;
 
   @override
   void initState() {
     super.initState();
     _loadWords();
     _loadImages();
+    _checkPremiumStatus();
+  }
+
+  Future<void> _checkPremiumStatus() async {
+    final premium = await RevenueCatService.isPremium();
+    setState(() {
+      _isPremium = premium;
+      _isLoadingPremium = false;
+    });
+  }
+
+  bool _canEditWord(String word) {
+    // Premium users can edit everything
+    if (_isPremium) return true;
+    
+    // Free users can only edit in "Needs" category
+    if (widget.categoryKey.toLowerCase() != 'needs') return false;
+    
+    // Free users can only edit first 3 words in Needs
+    final wordIndex = _words.indexOf(word);
+    return wordIndex < 3;
+  }
+
+  bool _canAddWord() {
+    // Premium users can add unlimited words
+    if (_isPremium) return true;
+    
+    // Free users can only add words in "Needs" category up to 3 total
+    if (widget.categoryKey.toLowerCase() != 'needs') return false;
+    
+    return _words.length < 3;
+  }
+
+  void _showUpgradePrompt(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.star, color: Colors.amber, size: 28),
+            SizedBox(width: 8),
+            Text('Premium Feature'),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Maybe Later'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PaywallScreen()),
+              );
+              if (result == true) {
+                _checkPremiumStatus();
+              }
+            },
+            child: const Text('Upgrade'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadWords() async {
@@ -84,6 +154,11 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   }
 
   Future<void> _pickAndSaveImage(String word) async {
+    if (!_canEditWord(word)) {
+      _showUpgradePrompt('Upgrade to edit all words and add images');
+      return;
+    }
+
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -136,6 +211,11 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   }
 
   Future<void> _removeImage(String word) async {
+    if (!_canEditWord(word)) {
+      _showUpgradePrompt('Upgrade to edit all words');
+      return;
+    }
+
     try {
       final imagePath = _wordImages[word];
       if (imagePath != null) {
@@ -152,6 +232,11 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   }
 
   void _showImageOptions(String word) {
+    if (!_canEditWord(word)) {
+      _showUpgradePrompt('Upgrade to edit all words and categories');
+      return;
+    }
+
     final hasImage = _wordImages.containsKey(word);
     
     showModalBottomSheet(
@@ -205,6 +290,11 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   }
 
   void _editWord(String oldWord) {
+    if (!_canEditWord(oldWord)) {
+      _showUpgradePrompt('Upgrade to edit all words');
+      return;
+    }
+
     String newWord = oldWord;
     
     showModalBottomSheet(
@@ -287,6 +377,11 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   }
 
   void _deleteWord(String word) {
+    if (!_canEditWord(word)) {
+      _showUpgradePrompt('Upgrade to delete words');
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -314,6 +409,15 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   }
 
   void _addWord() {
+    if (!_canAddWord()) {
+      if (widget.categoryKey.toLowerCase() != 'needs') {
+        _showUpgradePrompt('Upgrade to edit other categories');
+      } else {
+        _showUpgradePrompt('Upgrade to add more than 3 words');
+      }
+      return;
+    }
+
     String word = '';
     String? tempImagePath;
 
@@ -482,6 +586,13 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
 
   void _deleteSelected() {
     if (_selectedWords.isEmpty) return;
+
+    // Check if any selected words are locked
+    final lockedWords = _selectedWords.where((word) => !_canEditWord(word)).toList();
+    if (lockedWords.isNotEmpty) {
+      _showUpgradePrompt('Upgrade to delete all words');
+      return;
+    }
     
     showDialog(
       context: context,
@@ -518,11 +629,34 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     
+    if (_isLoadingPremium) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    
     return Scaffold(
       appBar: AppBar(
         leading: const LargeBackButton(),
         title: Text(widget.categoryDisplay),
         actions: [
+          if (!_isPremium)
+            TextButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PaywallScreen()),
+                );
+                if (result == true) {
+                  _checkPremiumStatus();
+                }
+              },
+              icon: const Icon(Icons.star, color: Colors.amber),
+              label: const Text('Upgrade'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.amber,
+              ),
+            ),
           IconButton(
             tooltip: 'Add Word',
             icon: const Icon(Icons.add),
@@ -540,6 +674,37 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Free user info banner
+            if (!_isPremium && widget.categoryKey.toLowerCase() == 'needs')
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                color: Colors.amber.shade100,
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Free: Edit first 3 words only',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PaywallScreen()),
+                        );
+                        if (result == true) {
+                          _checkPremiumStatus();
+                        }
+                      },
+                      child: const Text('Upgrade'),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: ValueListenableBuilder<double>(
                 valueListenable: TileSizeController.instance.gridScale,
@@ -558,12 +723,16 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
                       final word = _words[index];
                       final imagePath = _wordImages[word];
                       final hasImage = imagePath != null && File(imagePath).existsSync();
+                      final isLocked = !_canEditWord(word);
 
                       return GestureDetector(
                         onLongPress: () => _showImageOptions(word),
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.all(8),
+                            backgroundColor: isLocked 
+                                ? cs.surfaceVariant.withOpacity(0.5) 
+                                : null,
                           ),
                           onPressed: () {
                             if (_selectedWords.isEmpty) {
@@ -626,6 +795,23 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
                                       Icons.check,
                                       size: 16,
                                       color: cs.onPrimary,
+                                    ),
+                                  ),
+                                ),
+                              if (isLocked)
+                                Positioned(
+                                  top: 4,
+                                  left: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(
+                                      Icons.lock,
+                                      size: 16,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),

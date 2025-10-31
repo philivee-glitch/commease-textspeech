@@ -13,7 +13,9 @@ import 'subcategory_menu_screen.dart';
 import 'word_library_screen.dart';
 import 'yes_no_screen.dart';
 import '../services/review_prompt_service.dart';
+import '../services/revenue_cat_service.dart';
 import '../widgets/accessible_keyboard.dart';
+import 'paywall_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,12 +30,15 @@ class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocusNode = FocusNode();
   bool _showCustomKeyboard = false;
+  bool _isPremium = false;
+  bool _isLoadingPremium = true;
 
   @override
   void initState() {
     super.initState();
     _colourMap = {};
     _loadCustom();
+    _checkPremiumStatus();
   }
 
   @override
@@ -41,6 +46,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _textController.dispose();
     _textFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkPremiumStatus() async {
+    final premium = await RevenueCatService.isPremium();
+    setState(() {
+      _isPremium = premium;
+      _isLoadingPremium = false;
+    });
   }
 
   Future<void> _loadCustom() async {
@@ -75,7 +88,14 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  List<HomeItem> get _homeItems => [...seededHome, ..._custom];
+  List<HomeItem> get _homeItems {
+    // Show all seeded categories but not custom tiles for free users
+    if (!_isPremium) {
+      return seededHome;
+    }
+    
+    return [...seededHome, ..._custom];
+  }
 
   Color _getHomeTileColour(String label) {
     final lower = label.toLowerCase();
@@ -92,6 +112,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _speakText() {
+    if (!_isPremium) {
+      _showUpgradePrompt('Text-to-speech is a premium feature');
+      return;
+    }
+    
     final text = _textController.text.trim();
     if (text.isNotEmpty) {
       TtsController.instance.speak(text);
@@ -99,7 +124,47 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _showUpgradePrompt(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.star, color: Colors.amber, size: 28),
+            SizedBox(width: 8),
+            Text('Premium Feature'),
+          ],
+        ),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Maybe Later'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PaywallScreen()),
+              );
+              if (result == true) {
+                _checkPremiumStatus();
+              }
+            },
+            child: const Text('Upgrade'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _addHomeTile() {
+    if (!_isPremium) {
+      _showUpgradePrompt('Creating custom tiles is a premium feature');
+      return;
+    }
+    
     HomeItemType selectedType = HomeItemType.category;
     String label = '';
 
@@ -262,11 +327,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingPremium) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('CommEase'),
         centerTitle: true,
         actions: [
+          if (!_isPremium)
+            TextButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PaywallScreen()),
+                );
+                if (result == true) {
+                  _checkPremiumStatus();
+                }
+              },
+              icon: const Icon(Icons.star, color: Colors.amber),
+              label: const Text('Upgrade'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.amber,
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.grid_view),
             tooltip: 'Tile Size',
@@ -279,6 +367,37 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: const AppDrawer(),
       body: Column(
         children: [
+          // Free user banner
+          if (!_isPremium)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: Colors.amber.shade100,
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Free: Needs + Stop, Go, Toilet, Drink',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const PaywallScreen()),
+                      );
+                      if (result == true) {
+                        _checkPremiumStatus();
+                      }
+                    },
+                    child: const Text('Upgrade'),
+                  ),
+                ],
+              ),
+            ),
           // Tile grid
           Expanded(
             child: LayoutBuilder(
@@ -286,8 +405,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 return ValueListenableBuilder<double>(
                   valueListenable: TileSizeController.instance.gridScale,
                   builder: (context, gridScaleValue, child) {
-                    // Calculate tiles based on screen width and gridScale
-                    // Base tile size is 120px, adjusted by gridScale
                     final baseTileSize = (120 * gridScaleValue).clamp(125, double.infinity);
                     final tilesAcross = (constraints.maxWidth / baseTileSize).floor().clamp(2, 12);
 
@@ -321,26 +438,40 @@ class _HomeScreenState extends State<HomeScreen> {
                         final item = _homeItems[index];
                         final title = titleCase(item.label);
                         final colour = _getHomeTileColour(item.label);
+                        
+                        // Free tier unlocked items
+                        final freeUnlockedItems = ['needs', 'stop', 'go', 'toilet', 'drink'];
+                        final isLocked = !_isPremium && !freeUnlockedItems.contains(item.label.toLowerCase());
 
                         return GestureDetector(
                           onLongPress: () => _confirmDeleteHomeTile(item),
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: colour,
+                              backgroundColor: isLocked ? colour.withOpacity(0.3) : colour,
                               foregroundColor: onColor(colour, Theme.of(context).brightness),
                               padding: const EdgeInsets.all(4),
                             ),
                             onPressed: () {
+                              final raw = item.label;
+                              
+                              // Free users can only click unlocked items
+                              if (isLocked) {
+                                _showUpgradePrompt('Upgrade to unlock all categories');
+                                return;
+                              }
+                              
                               if (item.type == HomeItemType.quick) {
                                 TtsController.instance.speak(title);
                                 ReviewPromptService.incrementUsageAndCheckPrompt(context);
                                 return;
                               }
 
-                              final raw = item.label;
-
-                              // Special case for Yes/No screen - navigate silently
+                              // Block Yes/No for free users
                               if (raw.toLowerCase() == 'yes / no') {
+                                if (!_isPremium) {
+                                  _showUpgradePrompt('Yes/No screen is a premium feature');
+                                  return;
+                                }
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(builder: (_) => const YesNoScreen()),
@@ -348,7 +479,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return;
                               }
 
-                              // Speak for all other category tiles
                               TtsController.instance.speak(title);
                               ReviewPromptService.incrementUsageAndCheckPrompt(context);
 
@@ -356,7 +486,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               final hasNested = seededNested.containsKey(raw);
                               final hasFlat = seededFlat.containsKey(raw);
 
-                              // Flat categories (needs, feelings) go directly to word library
                               if (hasFlat && isSeeded) {
                                 Navigator.push(
                                   context,
@@ -368,10 +497,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                 );
-                              }
-                              // Nested categories (food, places, people) go to subcategory menu
-                              // Nested categories (food, places, people) go to subcategory menu
-                              else if (hasNested && isSeeded) {
+                              } else if (hasNested && isSeeded) {
                                 final nestedMap = seededNested[raw]!;
                                 final subcategoriesList = nestedMap.entries.map((entry) {
                                   return {
@@ -391,9 +517,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                 );
-                              }
-                              // Custom categories go to subcategory menu
-                              else {
+                              } else {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -406,11 +530,32 @@ class _HomeScreenState extends State<HomeScreen> {
                                 );
                               }
                             },
-                            child: ValueListenableBuilder<double>(
-                              valueListenable: TileSizeController.instance.scale,
-                              builder: (context, textScaleValue, child) {
-                                return _iconLabel(title, iconFor(item.label), textScaleValue);
-                              },
+                            child: Stack(
+                              children: [
+                                ValueListenableBuilder<double>(
+                                  valueListenable: TileSizeController.instance.scale,
+                                  builder: (context, textScaleValue, child) {
+                                    return _iconLabel(title, iconFor(item.label), textScaleValue);
+                                  },
+                                ),
+                                if (isLocked)
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Icon(
+                                        Icons.lock,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         );
@@ -421,59 +566,60 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ),
-          // Text input section at bottom
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceVariant,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      focusNode: _textFocusNode,
-                      enableInteractiveSelection: false,
-                      decoration: InputDecoration(
-                        hintText: 'Type to speak...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surface,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      onSubmitted: (_) => _speakText(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _speakText,
-                    icon: const Icon(Icons.volume_up),
-                    label: const Text('Speak'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
-                      ),
-                    ),
+          // Text input section - only for premium users
+          if (_isPremium)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, -2),
                   ),
                 ],
               ),
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        focusNode: _textFocusNode,
+                        enableInteractiveSelection: false,
+                        decoration: InputDecoration(
+                          hintText: 'Type to speak...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        onSubmitted: (_) => _speakText(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _speakText,
+                      icon: const Icon(Icons.volume_up),
+                      label: const Text('Speak'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
           // Custom keyboard
           if (_showCustomKeyboard)
             AccessibleKeyboard(

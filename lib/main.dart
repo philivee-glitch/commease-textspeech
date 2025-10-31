@@ -6,10 +6,12 @@ import 'services/subcategory_prefs.dart';
 import 'tile_size.dart';
 import 'screens/home_screen.dart';
 import 'screens/info/terms_screen.dart';
+import 'services/revenue_cat_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   TtsController.instance.init();
+  await RevenueCatService.initialize();
   SubcategoryPrefs.init();
   TileSizeController.instance.load();
   final prefs = await SharedPreferences.getInstance();
