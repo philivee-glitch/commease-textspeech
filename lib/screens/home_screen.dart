@@ -458,14 +458,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           onLongPress: () => _confirmDeleteHomeTile(item),
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isLocked ? colour.withOpacity(0.3) : colour,
+                              backgroundColor: colour,
                               foregroundColor: onColor(colour, Theme.of(context).brightness),
                               padding: const EdgeInsets.all(4),
                             ),
                             onPressed: () {
                               final raw = item.label;
                               
-                              // Free users can only click unlocked items
+                              // Free users - show upgrade prompt for locked items
                               if (isLocked) {
                                 _showUpgradePrompt('Upgrade to unlock all categories');
                                 return;
@@ -541,32 +541,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 );
                               }
                             },
-                            child: Stack(
-                              children: [
-                                ValueListenableBuilder<double>(
-                                  valueListenable: TileSizeController.instance.scale,
-                                  builder: (context, textScaleValue, child) {
-                                    return _iconLabel(title, iconFor(item.label), textScaleValue);
-                                  },
-                                ),
-                                if (isLocked)
-                                  Positioned(
-                                    top: 4,
-                                    right: 4,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Icon(
-                                        Icons.lock,
-                                        size: 16,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: TileSizeController.instance.scale,
+                              builder: (context, textScaleValue, child) {
+                                return _iconLabel(title, iconFor(item.label), textScaleValue);
+                              },
                             ),
                           ),
                         );
@@ -577,60 +556,66 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ),
-          // Text input section - only for premium users
-          if (_isPremium)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, -2),
+          // Text input section - visible for all users, locked for free users
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceVariant,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _textController,
+                      focusNode: _textFocusNode,
+                      enabled: _isPremium,
+                      enableInteractiveSelection: _isPremium,
+                      decoration: InputDecoration(
+                        hintText: _isPremium ? 'Type to speak...' : 'Premium feature - Upgrade to unlock',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(context).colorScheme.surface,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        suffixIcon: !_isPremium
+                            ? const Icon(Icons.lock, size: 20)
+                            : null,
+                      ),
+                      onTap: !_isPremium
+                          ? () => _showUpgradePrompt('Text-to-speech is a premium feature')
+                          : null,
+                      onSubmitted: _isPremium ? (_) => _speakText() : null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: _speakText,
+                    icon: const Icon(Icons.volume_up),
+                    label: const Text('Speak'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _textController,
-                        focusNode: _textFocusNode,
-                        enableInteractiveSelection: false,
-                        decoration: InputDecoration(
-                          hintText: 'Type to speak...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                        onSubmitted: (_) => _speakText(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      onPressed: _speakText,
-                      icon: const Icon(Icons.volume_up),
-                      label: const Text('Speak'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
+          ),
           // Custom keyboard
           if (_showCustomKeyboard)
             AccessibleKeyboard(
