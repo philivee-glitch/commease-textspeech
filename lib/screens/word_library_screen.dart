@@ -684,10 +684,10 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
                   children: [
                     const Icon(Icons.info_outline, size: 20),
                     const SizedBox(width: 8),
-                    Expanded(
+                    const Expanded(
                       child: Text(
                         'Free: Edit first 3 words only',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                       ),
                     ),
                     TextButton(
@@ -730,12 +730,9 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.all(8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                            backgroundColor: isLocked 
-                                ? cs.surfaceVariant.withOpacity(0.5) 
-                                : null,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                           onPressed: () {
                             if (_selectedWords.isEmpty) {
@@ -798,23 +795,6 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
                                       Icons.check,
                                       size: 16,
                                       color: cs.onPrimary,
-                                    ),
-                                  ),
-                                ),
-                              if (isLocked)
-                                Positioned(
-                                  top: 4,
-                                  left: 4,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black54,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(
-                                      Icons.lock,
-                                      size: 16,
-                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
