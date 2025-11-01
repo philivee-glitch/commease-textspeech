@@ -176,8 +176,8 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
       if (image == null) return;
 
       // Resize and crop to 4:3 aspect ratio
-      final targetWidth = 400;
-      final targetHeight = 300; // 4:3 ratio
+      final targetWidth = 300;
+      final targetHeight = 225; // 4:3 ratio
 
       img.Image resized;
 
@@ -201,7 +201,7 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = 'word_${widget.categoryKey}_${word.replaceAll(RegExp(r'[^\w\s]+'), '')}_$timestamp.jpg';
       final savedFile = File('${appDir.path}/$fileName');
-      await savedFile.writeAsBytes(img.encodeJpg(resized, quality: 85));
+      await savedFile.writeAsBytes(img.encodeJpg(resized, quality: 75));
 
       setState(() {
         _wordImages[word] = savedFile.path;
@@ -439,8 +439,8 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
         if (image == null) return;
 
         // Resize and crop to 4:3 aspect ratio
-        final targetWidth = 400;
-        final targetHeight = 300;
+        final targetWidth = 300;
+        final targetHeight = 225;
 
         img.Image resized;
         final scaleX = targetWidth / image.width;
@@ -460,7 +460,7 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final fileName = 'temp_word_$timestamp.jpg';
         final savedFile = File('${appDir.path}/$fileName');
-        await savedFile.writeAsBytes(img.encodeJpg(resized, quality: 85));
+        await savedFile.writeAsBytes(img.encodeJpg(resized, quality: 75));
 
         setModalState(() {
           tempImagePath = savedFile.path;
@@ -730,6 +730,9 @@ class _WordLibraryScreenState extends State<WordLibraryScreen> {
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.all(8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                             backgroundColor: isLocked 
                                 ? cs.surfaceVariant.withOpacity(0.5) 
                                 : null,

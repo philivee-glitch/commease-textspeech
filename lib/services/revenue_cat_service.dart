@@ -1,12 +1,17 @@
+import 'dart:io';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 class RevenueCatService {
-  static const String _apiKey = 'goog_bSwObNbWEtzFQQIsaTidZzrAyYD';
+  static const String _androidApiKey = 'goog_bSwObNbWEtzFQQIsaTidZzrAyYD';
+  static const String _iosApiKey = 'appl_XanjufnpnOxBSiNHEPfChSQswag';
   static const String _entitlementId = 'pro';
 
   static Future<void> initialize() async {
     await Purchases.setLogLevel(LogLevel.debug);
-    PurchasesConfiguration configuration = PurchasesConfiguration(_apiKey);
+    
+    // Use platform-specific API key
+    final apiKey = Platform.isIOS ? _iosApiKey : _androidApiKey;
+    PurchasesConfiguration configuration = PurchasesConfiguration(apiKey);
     await Purchases.configure(configuration);
   }
 
@@ -15,12 +20,12 @@ class RevenueCatService {
       CustomerInfo customerInfo = await Purchases.getCustomerInfo();
       return customerInfo.entitlements.all[_entitlementId]?.isActive ?? false;
     } catch (e) {
-      print('Error checking premium status: $e');
+      print('Error checking premium status: \$e');
       return false;
     }
   }
 
-  /// Purchase Monthly Subscription ($4.99/month with 3-day trial)
+  /// Purchase Monthly Subscription (\$4.99/month with 3-day trial)
   static Future<bool> purchaseMonthly() async {
     try {
       Offerings offerings = await Purchases.getOfferings();
@@ -39,12 +44,12 @@ class RevenueCatService {
       }
       return false;
     } catch (e) {
-      print('Error purchasing monthly subscription: $e');
+      print('Error purchasing monthly subscription: \$e');
       rethrow;
     }
   }
 
-  /// Purchase Annual Subscription with 3-day trial ($49.99/year)
+  /// Purchase Annual Subscription with 3-day trial (\$49.99/year)
   static Future<bool> purchaseAnnual() async {
     try {
       Offerings offerings = await Purchases.getOfferings();
@@ -64,12 +69,12 @@ class RevenueCatService {
       }
       return false;
     } catch (e) {
-      print('Error purchasing annual subscription: $e');
+      print('Error purchasing annual subscription: \$e');
       rethrow;
     }
   }
 
-  /// Purchase Lifetime Access ($79.99 one-time)
+  /// Purchase Lifetime Access (\$79.99 one-time)
   static Future<bool> purchaseLifetime() async {
     try {
       Offerings offerings = await Purchases.getOfferings();
@@ -78,7 +83,7 @@ class RevenueCatService {
         Package? lifetimePackage = offerings.current!.availablePackages.firstWhere(
           (pkg) => pkg.identifier == '\$rc_lifetime',
           orElse: () => offerings.current!.availablePackages.firstWhere(
-            (pkg) => pkg.storeProduct.identifier == 'commease_premium',
+            (pkg) => pkg.storeProduct.identifier.contains('premium'),
             orElse: () => throw Exception('Lifetime package not found'),
           ),
         );
@@ -88,7 +93,7 @@ class RevenueCatService {
       }
       return false;
     } catch (e) {
-      print('Error purchasing lifetime access: $e');
+      print('Error purchasing lifetime access: \$e');
       rethrow;
     }
   }
@@ -110,7 +115,7 @@ class RevenueCatService {
     try {
       await Purchases.restorePurchases();
     } catch (e) {
-      print('Error restoring purchases: $e');
+      print('Error restoring purchases: \$e');
       rethrow;
     }
   }
@@ -120,7 +125,7 @@ class RevenueCatService {
     try {
       return await Purchases.getCustomerInfo();
     } catch (e) {
-      print('Error getting customer info: $e');
+      print('Error getting customer info: \$e');
       rethrow;
     }
   }
@@ -130,7 +135,7 @@ class RevenueCatService {
     try {
       return await Purchases.getOfferings();
     } catch (e) {
-      print('Error getting offerings: $e');
+      print('Error getting offerings: \$e');
       rethrow;
     }
   }
